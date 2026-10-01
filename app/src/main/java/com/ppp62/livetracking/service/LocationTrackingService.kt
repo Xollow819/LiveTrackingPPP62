@@ -9,6 +9,7 @@ import android.location.LocationListener
 import android.location.LocationManager
 import android.os.BatteryManager
 import android.os.IBinder
+import android.os.SystemClock
 import androidx.core.app.ActivityCompat
 import androidx.core.app.NotificationCompat
 import com.ppp62.livetracking.MainActivity
@@ -47,6 +48,11 @@ class LocationTrackingService : Service(), LocationListener {
         if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
             manager.removeUpdates(this)
             manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10_000L, 10f, this)
+            // Network provider gives a faster first fix indoors / under tree cover where GPS struggles.
+            if (manager.allProviders.contains(LocationManager.NETWORK_PROVIDER)) {
+                try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10_000L, 10f, this) }
+                catch (_: Exception) { /* provider unavailable on this device */ }
+            }
         }
         scope.launch { repository().setTrackingState(PPPRepository.DEVICE_PARTICIPANT_ID, TrackingState.LIVE) }
     }
@@ -65,8 +71,17 @@ class LocationTrackingService : Service(), LocationListener {
         stopSelf()
     }
 
+    private var lastAccuracy = Float.MAX_VALUE
+    private var lastAcceptedAt = 0L
+
     override fun onLocationChanged(location: Location) {
         if (paused || location.accuracy > 100f) return
+        // With GPS + network providers active, keep the most accurate fix and
+        // guarantee progress with at least one accepted fix per minute.
+        val now = SystemClock.elapsedRealtime()
+        if (location.accuracy > lastAccuracy && now - lastAcceptedAt <= 60_000) return
+        lastAccuracy = location.accuracy
+        lastAcceptedAt = now
         val battery = getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         scope.launch {
             (application as PPP62Application).database.dao().upsertLocation(

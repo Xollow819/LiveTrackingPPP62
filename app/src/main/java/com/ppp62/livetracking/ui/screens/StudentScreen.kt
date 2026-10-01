@@ -28,7 +28,13 @@ fun StudentScreen(vm: AppViewModel, onBack: () -> Unit, onCheckIn: (String) -> U
     var code by rememberSaveable { mutableStateOf("PPP6201") }
     var name by rememberSaveable { mutableStateOf(profile.name) }
     var team by rememberSaveable { mutableStateOf(profile.team) }
-    var tracking by rememberSaveable { mutableStateOf(false) }
+    val ownLocation = locations.firstOrNull { it.participantId == "this-device" }
+    // Re-derive from the database so the buttons reflect reality when the screen
+    // is re-entered (e.g. tracking paused/finished from the notification).
+    var tracking by rememberSaveable(ownLocation?.trackingState) {
+        mutableStateOf(ownLocation?.trackingState == com.ppp62.livetracking.data.TrackingState.LIVE ||
+                ownLocation?.trackingState == com.ppp62.livetracking.data.TrackingState.PAUSED)
+    }
 
     Scaffold(topBar = { TopAppBar(title = { Column { Text("Student field session", fontWeight = FontWeight.Bold); Text(if (profile.joined) "${profile.name} • ${profile.team}" else "Join before tracking", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad)) {
@@ -60,7 +66,7 @@ fun StudentScreen(vm: AppViewModel, onBack: () -> Unit, onCheckIn: (String) -> U
                     ListItem(headlineContent = { Text("${cp.orderIndex}. ${cp.name}") }, supportingContent = { Text(cp.instructions) }, leadingContent = { Icon(Icons.Default.LocationOn, null, tint = MaterialTheme.colorScheme.primary) }, trailingContent = { FilledTonalIconButton(onClick = { onCheckIn(cp.id) }) { Icon(Icons.Default.AddAPhoto, "Check in") } })
                     HorizontalDivider()
                 }
-                item { val own = locations.firstOrNull { it.participantId == "this-device" }; AssistChip(onClick = {}, label = { Text(if (own == null) "Waiting for GPS" else "GPS ±${own.accuracyMeters.toInt()} m • ${own.trackingState}") }, leadingIcon = { Icon(Icons.Default.GpsFixed, null) }, modifier = Modifier.padding(16.dp)) }
+                item { val own = ownLocation; AssistChip(onClick = {}, label = { Text(if (own == null) "Waiting for GPS" else "GPS ±${own.accuracyMeters.toInt()} m • ${own.trackingState}") }, leadingIcon = { Icon(Icons.Default.GpsFixed, null) }, modifier = Modifier.padding(16.dp)) }
             }
         }
     }

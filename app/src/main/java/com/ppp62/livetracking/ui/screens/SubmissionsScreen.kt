@@ -1,19 +1,32 @@
 package com.ppp62.livetracking.ui.screens
 
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.net.Uri
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.SyncState
 import com.ppp62.livetracking.ui.AppViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
+import kotlin.math.max
+import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -27,8 +40,35 @@ fun SubmissionsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(cp, fontWeight = FontWeight.Bold); AssistChip(onClick = {}, label = { Text(item.syncState.name) }, leadingIcon = { Icon(if (item.syncState == SyncState.FLAGGED) Icons.Default.Warning else Icons.Default.CloudUpload, null) }) }
                 Text("${item.studentName} • ${item.team}"); Text("${item.temperatureC} °C • ${item.weightKg} kg • ${item.condition.name}")
                 item.distanceMeters?.let { Text("Distance ${it.toInt()} m") }; item.exceptionReason?.let { Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) }
+                item.photoUri?.let { EvidenceThumbnail(it) }
                 if (item.notes.isNotBlank()) Text(item.notes); Text(DateFormat.getDateTimeInstance().format(Date(item.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
         } }
+    }
+}
+
+/** Decodes a downsampled thumbnail of the evidence photo off the main thread. */
+@Composable private fun EvidenceThumbnail(photoUri: String) {
+    val context = LocalContext.current
+    var bitmap by remember(photoUri) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(photoUri) {
+        bitmap = withContext(Dispatchers.IO) {
+            try {
+                val uri = Uri.parse(photoUri)
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, bounds) }
+                val sample = max(1, min(bounds.outWidth, bounds.outHeight) / 240)
+                val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+                context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+            } catch (_: Exception) { null }
+        }
+    }
+    bitmap?.let {
+        Image(
+            bitmap = it.asImageBitmap(),
+            contentDescription = "Evidence photo",
+            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(10.dp)),
+            contentScale = ContentScale.Crop
+        )
     }
 }
