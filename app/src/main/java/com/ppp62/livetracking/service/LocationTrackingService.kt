@@ -45,9 +45,13 @@ class LocationTrackingService : Service(), LocationListener {
     private fun startTracking() {
         paused = false
         startForeground(NOTIFICATION_ID, notification("Sharing live location", ACTION_PAUSE, "Pause"))
-        if (ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED) {
+        val fineGranted = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        val coarseGranted = ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION) == PackageManager.PERMISSION_GRANTED
+        if (fineGranted || coarseGranted) {
             manager.removeUpdates(this)
-            manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10_000L, 10f, this)
+            if (fineGranted && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10_000L, 10f, this)
+            }
             // Network provider gives a faster first fix indoors / under tree cover where GPS struggles.
             if (manager.allProviders.contains(LocationManager.NETWORK_PROVIDER)) {
                 try { manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10_000L, 10f, this) }

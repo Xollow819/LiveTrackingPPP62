@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
@@ -37,25 +38,48 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
     val distance = if (checkpoint != null && own != null) LocationUtils.distanceMeters(own.latitude, own.longitude, checkpoint.latitude, checkpoint.longitude) else null
 
     Scaffold(topBar = { TopAppBar(title = { Text(checkpoint?.name ?: "Checkpoint check-in") }, navigationIcon = { IconButton(onClick = onDone) { Icon(Icons.Default.Close, null) } }) }) { pad ->
-        Column(Modifier.padding(pad).padding(20.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+        Column(Modifier.padding(pad).padding(horizontal = 18.dp, vertical = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (checkpoint == null) { Text("Checkpoint not found"); return@Column }
-            ElevatedCard(colors = CardDefaults.elevatedCardColors(containerColor = if (distance != null && distance <= checkpoint.radiusMeters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.errorContainer)) {
-                Row(Modifier.fillMaxWidth().padding(16.dp)) { Icon(if (distance == null) Icons.Default.GpsOff else Icons.Default.GpsFixed, null); Spacer(Modifier.width(10.dp)); Column { Text(if (distance == null) "GPS unavailable — submission will be flagged" else "${distance.toInt()} m from checkpoint"); Text("Allowed radius ${checkpoint.radiusMeters.toInt()} m", style = MaterialTheme.typography.labelMedium) } }
+            Text("Field record", style = MaterialTheme.typography.headlineMedium)
+            Text("Capture the conditions and evidence for this arrival.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ElevatedCard(shape = RoundedCornerShape(22.dp), colors = CardDefaults.elevatedCardColors(containerColor = if (distance != null && distance <= checkpoint.radiusMeters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer)) {
+                Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    Icon(if (distance == null) Icons.Default.GpsOff else Icons.Default.GpsFixed, null)
+                    Spacer(Modifier.width(12.dp))
+                    Column(Modifier.weight(1f)) {
+                        Text(if (distance == null) "GPS fix unavailable" else "${distance.toInt()} m from checkpoint", style = MaterialTheme.typography.titleMedium)
+                        Text(if (distance == null) "Location will be recorded as unavailable" else "Allowed radius ${checkpoint.radiusMeters.toInt()} m", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (distance != null && distance <= checkpoint.radiusMeters) Icon(Icons.Default.CheckCircle, "Within checkpoint radius")
+                }
             }
+            Text("Transport conditions", style = MaterialTheme.typography.titleLarge)
             OutlinedTextField(temperature, { temperature = it }, label = { Text("Water temperature (°C) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && temperature.toDoubleOrNull() == null, modifier = Modifier.fillMaxWidth())
             OutlinedTextField(weight, { weight = it }, label = { Text("Consignment weight (kg) *") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && weight.toDoubleOrNull() == null, modifier = Modifier.fillMaxWidth())
-            Text("Fish condition", style = MaterialTheme.typography.titleSmall)
+            Text("Fish condition", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FishCondition.entries.forEach { value -> FilterChip(selected = condition == value, onClick = { condition = value }, label = { Text(value.name.lowercase().replaceFirstChar { it.uppercase() }) }) } }
+            Text("Supporting evidence", style = MaterialTheme.typography.titleLarge)
             OutlinedCard(onClick = {
                 val dir = File(context.filesDir, "evidence").apply { mkdirs() }; val file = File(dir, "checkin-${System.currentTimeMillis()}.jpg")
                 pendingUri = FileProvider.getUriForFile(context, "${context.packageName}.files", file); camera.launch(pendingUri!!)
-            }, modifier = Modifier.fillMaxWidth()) { Row(Modifier.padding(20.dp)) { Icon(if (photoUri == null) Icons.Default.AddAPhoto else Icons.Default.CheckCircle, null, tint = MaterialTheme.colorScheme.primary); Spacer(Modifier.width(12.dp)); Column { Text(if (photoUri == null) "Capture cargo/fish evidence *" else "Evidence photo captured"); Text("Stored privately in app storage", style = MaterialTheme.typography.labelSmall) } } }
+            }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
+                Row(Modifier.padding(18.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                    val evidenceIcon = if (photoUri == null) Icons.Default.AddAPhoto else Icons.Default.CheckCircle
+                    val evidenceTitle = if (photoUri == null) "Capture cargo/fish evidence *" else "Evidence photo captured"
+                    Icon(evidenceIcon, null, tint = MaterialTheme.colorScheme.primary)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(evidenceTitle, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                        Text("Stored privately in app storage", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+            }
             if (attempted && checkpoint.requiresPhoto && photoUri == null) Text("A photo is required", color = MaterialTheme.colorScheme.error)
             OutlinedTextField(notes, { notes = it }, label = { Text("Notes / exception explanation") }, minLines = 3, modifier = Modifier.fillMaxWidth())
             Button(onClick = {
                 attempted = true; val temp = temperature.toDoubleOrNull(); val kg = weight.toDoubleOrNull()
                 if (temp != null && kg != null && (!checkpoint.requiresPhoto || photoUri != null)) vm.submit(checkpoint, temp, kg, condition, notes, photoUri, own?.latitude, own?.longitude, onDone)
-            }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Icon(Icons.Default.Save, null); Text(" Save check-in") }
+            }, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text("Save check-in") }
             Text("Evidence is queued locally and remains marked Pending until an authenticated server confirms upload.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }

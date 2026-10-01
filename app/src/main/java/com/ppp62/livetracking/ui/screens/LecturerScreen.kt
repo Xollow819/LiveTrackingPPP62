@@ -1,6 +1,7 @@
 package com.ppp62.livetracking.ui.screens
 
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -8,7 +9,11 @@ import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.*
@@ -20,6 +25,7 @@ import com.ppp62.livetracking.ui.toEntity
 import com.ppp62.livetracking.util.CsvExporter
 import com.ppp62.livetracking.util.DeviceLocation
 import com.ppp62.livetracking.util.LocationUtils
+import kotlinx.coroutines.launch
 import org.osmdroid.util.GeoPoint
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -65,6 +71,14 @@ private fun LecturerMonitorScreen(vm: AppViewModel, bvm: BackendViewModel, onBac
 
     var myLoc by remember { mutableStateOf<GeoPoint?>(null) }
     LaunchedEffect(Unit) { myLoc = DeviceLocation.lastKnown(context) }
+    var locating by remember { mutableStateOf(false) }
+    var gpsMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    val locationPermissions = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants[android.Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
+            scope.launch { locating = true; myLoc = DeviceLocation.currentOrLastKnown(context); locating = false; if (myLoc == null) gpsMessage = "No GPS fix yet. Check device location and try again." }
+        } else gpsMessage = "Location permission is needed to center the map."
+    }
 
     val checkpoints = remember(onlineCheckpoints) { onlineCheckpoints.mapIndexed { i, r -> r.toEntity(i) } }
     val people = remember(onlinePositions) { onlinePositions.map { it.toEntity(session.id) } }
@@ -83,7 +97,34 @@ private fun LecturerMonitorScreen(vm: AppViewModel, bvm: BackendViewModel, onBac
         }
     ) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-            item { OsmMap(Modifier.fillMaxWidth().height(320.dp), checkpoints, people, myLocation = myLoc) }
+            item {
+                Box(Modifier.fillMaxWidth().height(320.dp)) {
+                    OsmMap(Modifier.fillMaxSize(), checkpoints, people, myLocation = myLoc, target = myLoc)
+                    FilledTonalIconButton(onClick = {
+                        if (!DeviceLocation.hasPermission(context)) locationPermissions.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
+                        else scope.launch {
+                            locating = true; gpsMessage = null
+                            myLoc = DeviceLocation.currentOrLastKnown(context)
+                            locating = false
+                            if (myLoc == null) gpsMessage = if (DeviceLocation.locationEnabled(context)) "No GPS fix yet. Move outdoors and retry." else "Turn on device location, then retry."
+                        }
+                    }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
+                        if (locating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.MyLocation, "Find my location")
+                    }
+                    gpsMessage?.let { message ->
+                        Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
+                            Row(Modifier.padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
+                                TextButton(onClick = {
+                                    if (!DeviceLocation.hasPermission(context)) context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                                    else if (!DeviceLocation.locationEnabled(context)) context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
+                                    else scope.launch { locating = true; myLoc = DeviceLocation.currentOrLastKnown(context); locating = false; if (myLoc == null) gpsMessage = "No GPS fix yet. Move outdoors and retry." }
+                                }) { Text(if (!DeviceLocation.hasPermission(context)) "Settings" else if (!DeviceLocation.locationEnabled(context)) "Turn on" else "Retry") }
+                            }
+                        }
+                    }
+                }
+            }
             item {
                 Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     SummaryCard("$liveCount", "Live now", Modifier.weight(1f))

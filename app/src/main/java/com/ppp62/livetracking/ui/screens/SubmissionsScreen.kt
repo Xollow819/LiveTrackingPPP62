@@ -5,9 +5,9 @@ import android.graphics.BitmapFactory
 import android.net.Uri
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -37,8 +37,19 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
     val onlineSession by bvm.onlineSession
     val onlineSubmissions by bvm.onlineSubmissions.collectAsState()
     LaunchedEffect(onlineSession) { if (onlineSession != null) bvm.refreshOnlineSubmissions() }
-    Scaffold(topBar = { TopAppBar(title = { Text("Check-in review") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }) }) { pad ->
+    Scaffold(topBar = { TopAppBar(title = { Column { Text("Field records", fontWeight = FontWeight.Bold); Text("Review submitted evidence", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+            item {
+                ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 12.dp, 12.dp, 4.dp), shape = RoundedCornerShape(22.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+                    Row(Modifier.fillMaxWidth().padding(18.dp), horizontalArrangement = Arrangement.spacedBy(12.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
+                        Icon(Icons.Default.AssignmentTurnedIn, null, tint = MaterialTheme.colorScheme.onPrimaryContainer, modifier = Modifier.size(28.dp))
+                        Column {
+                            Text("${onlineSubmissions.size + submissions.size} records", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                            Text(if (onlineSession != null) "Session ${onlineSession!!.code}" else "Saved on this device", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onPrimaryContainer)
+                        }
+                    }
+                }
+            }
             if (onlineSession != null) {
                 item {
                     Row(Modifier.fillMaxWidth().padding(12.dp, 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -47,7 +58,7 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
                     }
                 }
                 items(onlineSubmissions, key = { it.id ?: it.createdAt.orEmpty() + it.displayName }) { item ->
-                    ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp)) {
+                    ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                                 Text(item.checkpointName.ifBlank { "Checkpoint" }, fontWeight = FontWeight.Bold)
@@ -71,7 +82,7 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
             if (submissions.isEmpty() && onlineSubmissions.isEmpty()) item { Box(Modifier.fillMaxWidth().padding(32.dp)) { Text("No submissions yet. Student check-ins will appear here.") } }
             else items(submissions, key = { it.id }) { item ->
             val cp = checkpoints.firstOrNull { it.id == item.checkpointId }?.name ?: item.checkpointId
-            ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(cp, fontWeight = FontWeight.Bold); AssistChip(onClick = {}, label = { Text(item.syncState.name) }, leadingIcon = { Icon(if (item.syncState == SyncState.FLAGGED) Icons.Default.Warning else Icons.Default.CloudUpload, null) }) }
                 Text("${item.studentName} • ${item.team}"); Text("${item.temperatureC} °C • ${item.weightKg} kg • ${item.condition.name}")
                 item.distanceMeters?.let { Text("Distance ${it.toInt()} m") }; item.exceptionReason?.let { Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) }

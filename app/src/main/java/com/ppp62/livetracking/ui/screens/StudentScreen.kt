@@ -1,7 +1,11 @@
 package com.ppp62.livetracking.ui.screens
 
+import android.Manifest
+import android.net.Uri
+import android.provider.Settings
 import android.content.Intent
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
@@ -90,6 +94,19 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
     var tracking by rememberSaveable(own?.trackingState) {
         mutableStateOf(own?.trackingState == TrackingState.LIVE || own?.trackingState == TrackingState.PAUSED)
     }
+    var trackingPermissionMessage by remember { mutableStateOf<String?>(null) }
+    fun startSharing() {
+        trackingPermissionMessage = null
+        tracking = true
+        val intent = Intent(context, LocationTrackingService::class.java)
+            .putExtra(LocationTrackingService.EXTRA_NAME, profile.name)
+            .putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
+        ContextCompat.startForegroundService(context, intent)
+    }
+    val trackingLocationPermission = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true) startSharing()
+        else { tracking = false; trackingPermissionMessage = "Allow location access to share your route. You can change this in app settings." }
+    }
 
     Scaffold(
         topBar = {
@@ -130,7 +147,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                 modifier = Modifier.fillMaxSize().padding(pad)
             )
         } else {
-            LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+            LazyColumn(Modifier.fillMaxSize().padding(pad), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 arrivalBanner?.let { cp ->
                     item {
                         ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 12.dp, 12.dp, 0.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
@@ -147,74 +164,78 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                     }
                 }
                 item {
+                    ElevatedCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp), shape = RoundedCornerShape(24.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                     OsmMap(
-                        Modifier.fillMaxWidth().height(320.dp),
+                        Modifier.fillMaxWidth().height(300.dp),
                         sessionCheckpoints,
                         listOfNotNull(own),
                         myLocation = ownPoint ?: devicePoint
                     )
+                    }
                 }
                 item {
-                    Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    ElevatedCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp), shape = RoundedCornerShape(22.dp)) {
+                    Column(Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Icon(if (tracking) Icons.Default.GpsFixed else Icons.Default.GpsNotFixed, null, tint = if (tracking) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary)
+                        Column(Modifier.weight(1f)) {
+                            Text(if (own?.trackingState == TrackingState.PAUSED) "Location sharing paused" else if (tracking) "Location sharing active" else "Location sharing off", style = MaterialTheme.typography.titleMedium)
+                            Text(if (own != null) "GPS accuracy ±${own.accuracyMeters.toInt()} m" else "Waiting for a GPS fix", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
+                        Surface(shape = RoundedCornerShape(50), color = if (onlineSession != null) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer) {
+                            Text(if (onlineSession != null) "ONLINE" else "OFFLINE", Modifier.padding(horizontal = 10.dp, vertical = 6.dp), style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (!tracking) {
                             Button(
                                 onClick = {
-                                    tracking = true
-                                    val intent = Intent(context, LocationTrackingService::class.java)
-                                        .putExtra(LocationTrackingService.EXTRA_NAME, profile.name)
-                                        .putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
-                                    ContextCompat.startForegroundService(context, intent)
+                                    if (DeviceLocation.hasPermission(context)) startSharing()
+                                    else trackingLocationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
                                 },
-                                modifier = Modifier.weight(1f).height(52.dp)
+                                modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(16.dp)
                             ) { Icon(Icons.Default.PlayArrow, null); Text(" Start sharing location") }
                         } else {
                             OutlinedButton(
-                                onClick = { context.startService(Intent(context, LocationTrackingService::class.java).setAction(LocationTrackingService.ACTION_PAUSE)) },
-                                modifier = Modifier.weight(1f).height(52.dp)
-                            ) { Icon(Icons.Default.Pause, null); Text(" Pause") }
+                                onClick = {
+                                    val action = if (own?.trackingState == TrackingState.PAUSED) LocationTrackingService.ACTION_RESUME else LocationTrackingService.ACTION_PAUSE
+                                    context.startService(Intent(context, LocationTrackingService::class.java).setAction(action))
+                                },
+                                modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(16.dp)
+                            ) { Icon(if (own?.trackingState == TrackingState.PAUSED) Icons.Default.PlayArrow else Icons.Default.Pause, null); Text(if (own?.trackingState == TrackingState.PAUSED) " Resume" else " Pause") }
                             Button(
                                 onClick = {
                                     tracking = false
                                     context.startService(Intent(context, LocationTrackingService::class.java).setAction(LocationTrackingService.ACTION_FINISH))
                                 },
                                 colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.error),
-                                modifier = Modifier.weight(1f).height(52.dp)
+                                modifier = Modifier.weight(1f).height(52.dp), shape = RoundedCornerShape(16.dp)
                             ) { Icon(Icons.Default.StopCircle, null); Text(" Finish") }
                         }
                     }
+                    trackingPermissionMessage?.let { message ->
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(message, Modifier.weight(1f), color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall)
+                            TextButton(onClick = { context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}"))) }) { Text("Settings") }
+                        }
+                    }
+                    }
                 }
-                item {
-                    AssistChip(
-                        onClick = {},
-                        label = { Text(if (onlineSession != null) "Online ✓ ${onlineSession!!.code}" else "Offline — waiting for connection") },
-                        leadingIcon = { Icon(if (onlineSession != null) Icons.Default.CloudDone else Icons.Default.CloudOff, null) },
-                        modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp)
-                    )
                 }
-                item {
-                    AssistChip(
-                        onClick = {},
-                        label = {
-                            Text(
-                                if (own == null) "Waiting for GPS…" else "GPS ±${own.accuracyMeters.toInt()} m • ${own.trackingState.name.lowercase().replaceFirstChar { it.uppercase() }}"
-                            )
-                        },
-                        leadingIcon = { Icon(Icons.Default.GpsFixed, null) },
-                        modifier = Modifier.padding(16.dp, 0.dp, 16.dp, 8.dp)
-                    )
-                }
-                item { Text("Checkpoints", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 8.dp)) }
+                item { Row(Modifier.fillMaxWidth().padding(horizontal = 18.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) { Text("Route checkpoints", style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f)); Text("${sessionCheckpoints.size} STOPS", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) } }
                 if (sessionCheckpoints.isEmpty()) {
                     item { Text("No checkpoints on this session yet.", modifier = Modifier.padding(16.dp, 0.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
                 }
                 items(sessionCheckpoints, key = { it.id }) { cp ->
-                    ListItem(
-                        headlineContent = { Text("${cp.orderIndex}. ${cp.name}") },
-                        supportingContent = { Text("Radius ${cp.radiusMeters.toInt()} m") },
-                        leadingContent = { Icon(Icons.Default.LocationOn, null, tint = MaterialTheme.colorScheme.primary) },
-                        trailingContent = { FilledTonalIconButton(onClick = { onCheckIn(cp.id) }) { Icon(Icons.Default.AddAPhoto, "Check in") } }
-                    )
-                    HorizontalDivider()
+                    ElevatedCard(Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 4.dp), shape = RoundedCornerShape(18.dp)) {
+                        ListItem(
+                            headlineContent = { Text("${cp.orderIndex}. ${cp.name}", fontWeight = FontWeight.SemiBold) },
+                            supportingContent = { Text("Arrival radius ${cp.radiusMeters.toInt()} m") },
+                            leadingContent = { Surface(shape = RoundedCornerShape(12.dp), color = MaterialTheme.colorScheme.primaryContainer) { Icon(Icons.Default.LocationOn, null, Modifier.padding(9.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer) } },
+                            trailingContent = { FilledTonalIconButton(onClick = { onCheckIn(cp.id) }) { Icon(Icons.Default.AddAPhoto, "Check in") } },
+                            colors = ListItemDefaults.colors(containerColor = MaterialTheme.colorScheme.surface)
+                        )
+                    }
                 }
                 item { Spacer(Modifier.height(16.dp)) }
             }
@@ -231,15 +252,20 @@ private fun JoinForm(
     onJoin: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Column(modifier.padding(24.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-        Text("Join a session", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-        Text("Ask your lecturer for the 6-character join code.", color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(code, onCode, label = { Text("Join code") }, placeholder = { Text("e.g. KX7Q2P") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Key, null) })
+    Column(modifier.padding(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+        Spacer(Modifier.height(20.dp))
+        Text("Join your field session", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+        Text("Enter the details shared by your lecturer to open the route and start recording your practical.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+        ElevatedCard(shape = RoundedCornerShape(24.dp)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        OutlinedTextField(code, onCode, label = { Text("Session code") }, placeholder = { Text("e.g. KX7Q2P") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Key, null) })
         OutlinedTextField(name, onName, label = { Text("Your name") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Person, null) })
         OutlinedTextField(team, onTeam, label = { Text("Team") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Group, null) })
+            }
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Spacer(Modifier.weight(1f))
-        Button(onClick = onJoin, enabled = !joining, modifier = Modifier.fillMaxWidth().height(54.dp)) {
+        Button(onClick = onJoin, enabled = !joining, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) {
             if (joining) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
             else { Icon(Icons.Default.Login, null); Spacer(Modifier.width(8.dp)); Text("Join session") }
         }

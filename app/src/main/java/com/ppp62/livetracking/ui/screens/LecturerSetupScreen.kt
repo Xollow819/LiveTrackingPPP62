@@ -1,7 +1,15 @@
 package com.ppp62.livetracking.ui.screens
 
+import android.Manifest
 import android.content.Intent
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.provider.Settings
+import android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -24,6 +32,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import com.ppp62.livetracking.data.CheckpointEntity
 import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.ui.BackendViewModel
@@ -98,13 +107,19 @@ private fun DetailsStep(
     error: String?,
     onContinue: () -> Unit
 ) {
-    Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
-        Text("Name the session and set a private PIN.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        OutlinedTextField(title, onTitle, label = { Text("Session title") }, placeholder = { Text("Morning distribution run") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) })
-        OutlinedTextField(pin, onPin, label = { Text("Lecturer PIN") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.VpnKey, null) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), supportingText = { Text("Only you use this to open the monitoring view. Students never see it.") })
+    Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
+        LinearProgressIndicator(progress = { .34f }, Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.surfaceVariant)
+        Text("Start with the basics", style = MaterialTheme.typography.headlineMedium)
+        Text("Give your practical a recognizable name and protect lecturer controls with a PIN.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        ElevatedCard(shape = RoundedCornerShape(24.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+                OutlinedTextField(title, onTitle, label = { Text("Session title") }, placeholder = { Text("Morning distribution run") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) })
+                OutlinedTextField(pin, onPin, label = { Text("Lecturer PIN") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.VpnKey, null) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), supportingText = { Text("Students will only use the join code.") })
+            }
+        }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
         Spacer(Modifier.weight(1f))
-        Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(54.dp)) { Text("Continue to map"); Icon(Icons.Default.ArrowForward, null) }
+        Button(onClick = onContinue, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) { Text("Continue to map"); Spacer(Modifier.width(8.dp)); Icon(Icons.Default.ArrowForward, null) }
     }
 }
 
@@ -126,6 +141,38 @@ private fun MapStep(
     var searchError by remember { mutableStateOf<String?>(null) }
     var pendingPin by remember { mutableStateOf<GeoPoint?>(null) }
     var mapError by remember { mutableStateOf<String?>(null) }
+    var locating by remember { mutableStateOf(false) }
+    var locationMessage by remember { mutableStateOf<String?>(null) }
+    var permissionDenied by remember { mutableStateOf(false) }
+    val locationLauncher = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        val allowed = grants[Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[Manifest.permission.ACCESS_COARSE_LOCATION] == true
+        permissionDenied = !allowed
+        if (allowed) scope.launch {
+            locating = true
+            locationMessage = null
+            val fix = DeviceLocation.currentOrLastKnown(context)
+            locating = false
+            if (fix != null) { myLoc = fix; target = fix } else locationMessage = if (!DeviceLocation.locationEnabled(context)) "Turn on device location, then try again." else "No location fix yet. Move outdoors and retry."
+        }
+    }
+
+    fun locate() {
+        if (!DeviceLocation.hasPermission(context)) {
+            locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+            return
+        }
+        if (!DeviceLocation.locationEnabled(context)) {
+            locationMessage = "Turn on device location, then try again."
+            return
+        }
+        scope.launch {
+            locating = true
+            locationMessage = null
+            val fix = DeviceLocation.currentOrLastKnown(context)
+            locating = false
+            if (fix != null) { myLoc = fix; target = fix } else locationMessage = "No location fix yet. Move outdoors and retry."
+        }
+    }
 
     LaunchedEffect(Unit) { myLoc = DeviceLocation.lastKnown(context) }
 
@@ -189,10 +236,26 @@ private fun MapStep(
 
         // Recenter on device location
         FloatingActionButton(
-            onClick = { DeviceLocation.lastKnown(context)?.let { myLoc = it; target = it } },
+            onClick = { locate() },
             modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp),
             containerColor = MaterialTheme.colorScheme.surface
-        ) { Icon(Icons.Default.MyLocation, "My location", tint = MaterialTheme.colorScheme.primary) }
+        ) {
+            if (locating) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
+            else Icon(Icons.Default.MyLocation, "Find my location", tint = MaterialTheme.colorScheme.primary)
+        }
+
+        if (locationMessage != null || permissionDenied) {
+            ElevatedCard(Modifier.align(Alignment.CenterEnd).padding(end = 64.dp, top = 12.dp)) {
+                Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(locationMessage ?: "Location permission is needed to find your position.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
+                    TextButton(onClick = {
+                        if (permissionDenied) context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                        else if (!DeviceLocation.locationEnabled(context)) context.startActivity(Intent(ACTION_LOCATION_SOURCE_SETTINGS))
+                        else locate()
+                    }) { Text(if (permissionDenied) "Settings" else if (!DeviceLocation.locationEnabled(context)) "Turn on" else "Retry") }
+                }
+            }
+        }
 
         // Tap hint
         if (drafts.isEmpty() && pendingPin == null) {
@@ -290,7 +353,8 @@ private fun CodeStep(
     val clipboard = LocalClipboardManager.current
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         if (code == null) {
-            Text("Everything is set.", style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            LinearProgressIndicator(progress = { 1f }, Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.surfaceVariant)
+            Text("Ready to invite your group", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
             Text("“$title” with ${drafts.size} checkpoint${if (drafts.size == 1) "" else "s"}. Generating the join code creates the online session and uploads the checkpoints — students join with the code and see your map.", color = MaterialTheme.colorScheme.onSurfaceVariant)
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
             Spacer(Modifier.weight(1f))
