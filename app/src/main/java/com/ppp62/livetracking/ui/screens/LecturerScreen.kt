@@ -1,6 +1,10 @@
 package com.ppp62.livetracking.ui.screens
 
+import com.ppp62.livetracking.ui.components.GlassCard
+
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
@@ -34,12 +38,12 @@ import java.util.Locale
 
 private fun LivePositionRow.toEntity(sessionId: String): LocationEntity {
     val recordedAt = try {
-        updatedAt?.let { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() } ?: System.currentTimeMillis()
-    } catch (_: Exception) { System.currentTimeMillis() }
+        recordedAt?.let { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() } ?: 0L
+    } catch (_: Exception) { 0L }
     return LocationEntity(
         participantId = userId, sessionId = sessionId, participantName = displayName.ifBlank { "Student" },
-        team = "Field", latitude = lat, longitude = lng, accuracyMeters = (accuracy ?: 0.0).toFloat(),
-        speedMps = 0f, heading = 0f, recordedAt = recordedAt, trackingState = TrackingState.LIVE, batteryPercent = 0
+        team = team, latitude = lat, longitude = lng, accuracyMeters = (accuracy ?: 0.0).toFloat(),
+        speedMps = 0f, heading = 0f, recordedAt = recordedAt, trackingState = runCatching { TrackingState.valueOf(trackingState) }.getOrDefault(TrackingState.STALE), batteryPercent = 0
     )
 }
 
@@ -50,8 +54,11 @@ private fun LivePositionRow.toEntity(sessionId: String): LocationEntity {
 @Composable
 fun LecturerScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onSubmissions: () -> Unit) {
     val onlineSession by bvm.onlineSession
-    if (onlineSession == null) {
-        LecturerSetupScreen(vm, bvm, onBack)
+    if (!bvm.lecturerAuthenticated.value) {
+        LecturerAccountScreen(bvm,onBack)
+    } else if (onlineSession == null || bvm.myRole.value != "lecturer") {
+        var creating by remember { mutableStateOf(false) }
+        if(creating) LecturerSetupScreen(vm,bvm) {creating=false} else WorkspaceScreen(bvm,onBack) {creating=true}
     } else {
         LecturerMonitorScreen(vm, bvm, onBack, onSubmissions)
     }
@@ -59,119 +66,73 @@ fun LecturerScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, 
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun LecturerMonitorScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onSubmissions: () -> Unit) {
-    val context = LocalContext.current
-    val onlineSession by bvm.onlineSession
-    val onlinePositions by bvm.positions.collectAsState()
-    val onlineCheckpoints by bvm.onlineCheckpoints.collectAsState()
-    val alerts by bvm.alerts.collectAsState()
-    val onlineSubmissions by bvm.onlineSubmissions.collectAsState()
-    val session = onlineSession ?: return
-
-    LaunchedEffect(session.id) { bvm.refreshOnlineSubmissions() }
-
-    var myLoc by remember { mutableStateOf<GeoPoint?>(null) }
-    LaunchedEffect(Unit) { myLoc = DeviceLocation.lastKnown(context) }
-    var locating by remember { mutableStateOf(false) }
-    var gpsMessage by remember { mutableStateOf<String?>(null) }
-    val scope = rememberCoroutineScope()
-    val locationPermissions = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.RequestMultiplePermissions()) { grants ->
-        if (grants[android.Manifest.permission.ACCESS_FINE_LOCATION] == true || grants[android.Manifest.permission.ACCESS_COARSE_LOCATION] == true) {
-            scope.launch { locating = true; myLoc = DeviceLocation.currentOrLastKnown(context); locating = false; if (myLoc == null) gpsMessage = "No GPS fix yet. Check device location and try again." }
-        } else gpsMessage = "Location permission is needed to center the map."
-    }
-
-    val checkpoints = remember(onlineCheckpoints) { onlineCheckpoints.mapIndexed { i, r -> r.toEntity(i) } }
-    val people = remember(onlinePositions) { onlinePositions.map { it.toEntity(session.id) } }
-    val liveCount = people.count { !LocationUtils.isStale(it.recordedAt) }
-
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Column { Text("Monitoring", fontWeight = FontWeight.Bold); Text("Code ${session.code} • ${session.title}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
-                actions = {
-                    IconButton(onClick = { bvm.refreshOnlineSubmissions() }) { Icon(Icons.Default.Refresh, "Refresh") }
-                    IconButton(onClick = { bvm.leaveSession() }) { Icon(Icons.Default.Logout, "Leave session") }
-                }
-            )
-        }
-    ) { pad ->
-        LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-            item {
-                Box(Modifier.fillMaxWidth().height(320.dp)) {
-                    OsmMap(Modifier.fillMaxSize(), checkpoints, people, myLocation = myLoc, target = myLoc)
-                    MapControlButton(Icons.Default.MyLocation, "Find my location", onClick = {
-                        if (!DeviceLocation.hasPermission(context)) locationPermissions.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
-                        else scope.launch {
-                            locating = true; gpsMessage = null
-                            myLoc = DeviceLocation.currentOrLastKnown(context)
-                            locating = false
-                            if (myLoc == null) gpsMessage = if (DeviceLocation.locationEnabled(context)) "No GPS fix yet. Move outdoors and retry." else "Turn on device location, then retry."
-                        }
-                    }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp), busy = locating)
-                    gpsMessage?.let { message ->
-                        Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
-                            Row(Modifier.padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                                Text(message, Modifier.weight(1f), style = MaterialTheme.typography.bodySmall)
-                                TextButton(onClick = {
-                                    if (!DeviceLocation.hasPermission(context)) context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
-                                    else if (!DeviceLocation.locationEnabled(context)) context.startActivity(Intent(Settings.ACTION_LOCATION_SOURCE_SETTINGS))
-                                    else scope.launch { locating = true; myLoc = DeviceLocation.currentOrLastKnown(context); locating = false; if (myLoc == null) gpsMessage = "No GPS fix yet. Move outdoors and retry." }
-                                }) { Text(if (!DeviceLocation.hasPermission(context)) "Settings" else if (!DeviceLocation.locationEnabled(context)) "Turn on" else "Retry") }
-                            }
-                        }
+private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()->Unit,onSubmissions:()->Unit) {
+    val session by bvm.onlineSession; val positions by bvm.positions.collectAsState(); val cps by bvm.onlineCheckpoints.collectAsState()
+    val roster by bvm.roster.collectAsState(); val submissions by bvm.onlineSubmissions.collectAsState(); val alerts by bvm.alerts.collectAsState()
+    var tab by androidx.compose.runtime.saveable.rememberSaveable {mutableIntStateOf(0)}
+    var target by remember {mutableStateOf<GeoPoint?>(null)}
+    var now by remember {mutableLongStateOf(System.currentTimeMillis())}
+    var routeOpen by remember{mutableStateOf(false)}
+    var adding by remember{mutableStateOf(false)}
+    var editing by remember{mutableStateOf<com.ppp62.livetracking.data.remote.CheckpointRow?>(null)}
+    var confirmClose by remember {mutableStateOf(false)}
+    LaunchedEffect(Unit){while(true){now=System.currentTimeMillis();kotlinx.coroutines.delay(5000)}}
+    val active=session ?: return
+    val people=positions.map{it.toEntity(active.id)}
+    val checkpoints=cps.mapIndexed{i,cp->cp.toEntity(i)}
+    val live=people.count{now-it.recordedAt<90_000&&it.trackingState==TrackingState.LIVE}
+    Scaffold(topBar={TopAppBar(title={Column{Text(active.title.ifBlank{"Monitoring"},style=MaterialTheme.typography.titleLarge);Text("${active.code} · ${if(active.isActive) "Active session" else "Completed"}",style=MaterialTheme.typography.labelMedium)}},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}},actions={
+        if(active.isActive) IconButton(onClick={confirmClose=true}){Icon(Icons.Default.StopCircle,"Close session")}
+        IconButton(onClick={bvm.leaveSession()}){Icon(Icons.Default.Logout,"Leave session")}
+    })},bottomBar={com.ppp62.livetracking.ui.components.GlassNavigation(tab,listOf("Map","Students","Records"),listOf(Icons.Default.Map,Icons.Default.Groups,Icons.Default.Assignment)){tab=it}}) {pad->
+        when(tab){
+            0->Box(Modifier.fillMaxSize().padding(pad)){
+                OsmMap(Modifier.fillMaxSize(),checkpoints,people,target=target,layersTopPadding=124.dp,attributionBottomPadding=100.dp,onMapTap=if(adding) { point ->
+                    editing=com.ppp62.livetracking.data.remote.CheckpointRow(id=java.util.UUID.randomUUID().toString(),sessionId=active.id,name="",lat=point.latitude,lng=point.longitude,orderIndex=(cps.maxOfOrNull{it.orderIndex} ?: 0)+1);adding=false
+                } else null)
+                if(active.isActive) MapControlButton(Icons.Default.Route,"Edit route",{routeOpen=true},Modifier.align(Alignment.TopStart).padding(12.dp))
+                if(adding) com.ppp62.livetracking.ui.components.CheckpointMapHint(Modifier.align(Alignment.TopStart).padding(start=12.dp,top=72.dp))
+                com.ppp62.livetracking.ui.components.MapExploreControls({target=it},Modifier.align(Alignment.TopEnd).padding(12.dp))
+                GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)){
+                    Row(Modifier.fillMaxWidth().padding(20.dp),horizontalArrangement=Arrangement.SpaceBetween){
+                        Column{Text("$live",style=MaterialTheme.typography.headlineMedium);Text("Live now",style=MaterialTheme.typography.labelMedium)}
+                        Column{Text("${roster.count{it.role=="student"}}",style=MaterialTheme.typography.headlineMedium);Text("Students",style=MaterialTheme.typography.labelMedium)}
+                        Column{Text("${submissions.size}",style=MaterialTheme.typography.headlineMedium);Text("Records",style=MaterialTheme.typography.labelMedium)}
                     }
                 }
             }
-            item {
-                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    SummaryCard("$liveCount", "Live now", Modifier.weight(1f))
-                    SummaryCard("${people.size}", "Students", Modifier.weight(1f))
-                    SummaryCard("${onlineSubmissions.size}", "Check-ins", Modifier.weight(1f))
+            1->LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)){
+                item{Text("Your group",style=MaterialTheme.typography.headlineLarge);Text(if(bvm.connectionState.value==com.ppp62.livetracking.ui.ConnectionState.CONNECTED) "Connected" else "Reconnecting · showing last snapshot",color=MaterialTheme.colorScheme.onSurfaceVariant)}
+                if(roster.none{it.role=="student"}) item{Text("Share ${active.code} to invite your students.")}
+                items(roster.filter{it.role=="student"},key={it.userId}){student->
+                    val location=people.firstOrNull{it.participantId==student.userId}
+                    val status=if(location==null) "Not sharing" else if(location.trackingState!=TrackingState.LIVE) location.trackingState.name.lowercase().replaceFirstChar{it.uppercase()} else if(now-location.recordedAt>=90_000) "Last location is stale" else "Live · ±${location.accuracyMeters.toInt()} m"
+                    GlassCard(Modifier.fillMaxWidth(),onClick={location?.let{target=GeoPoint(it.latitude,it.longitude);tab=0}}){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
+                        Text(student.displayName,style=MaterialTheme.typography.titleLarge);Text(student.team);Text(status,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+                    }}
                 }
+                if(alerts.isNotEmpty()) item{Text("Field activity",style=MaterialTheme.typography.titleLarge)}
+                items(alerts.take(10),key={it.id}){Text(it.text,style=MaterialTheme.typography.bodyMedium)}
             }
-            item {
-                FilledTonalButton(onClick = onSubmissions, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
-                    Icon(Icons.Default.AssignmentTurnedIn, null); Text(" Review submissions")
-                }
+            else->Column(Modifier.fillMaxSize().padding(pad).padding(24.dp),verticalArrangement=Arrangement.spacedBy(20.dp)){
+                Text("Field records",style=MaterialTheme.typography.headlineLarge)
+                Text("${submissions.size} check-ins from this session. Review conditions, photos and exceptions.",color=MaterialTheme.colorScheme.onSurfaceVariant)
+                Button(onClick=onSubmissions,modifier=Modifier.fillMaxWidth().height(56.dp)){Text("Review evidence")}
+                bvm.connectionMessage.value?.let{Text(it,color=MaterialTheme.colorScheme.error)}
             }
-            if (alerts.isNotEmpty()) {
-                item { Text("Arrivals & departures", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp)) }
-                items(alerts.take(10), key = { it.id }) { alert ->
-                    ListItem(
-                        headlineContent = { Text(alert.text, style = MaterialTheme.typography.bodyMedium) },
-                        supportingContent = { Text(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(alert.at)), style = MaterialTheme.typography.labelSmall) },
-                        leadingContent = { Icon(if (alert.text.contains("arrived")) Icons.Default.Login else Icons.Default.Logout, null, tint = MaterialTheme.colorScheme.primary) }
-                    )
-                    HorizontalDivider()
-                }
-            }
-            item { Text("Students on the map", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp)) }
-            if (people.isEmpty()) {
-                item { Text("No students sharing location yet — they appear here once they join with code ${session.code} and start tracking.", modifier = Modifier.padding(16.dp, 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
-            }
-            items(people, key = { it.participantId }) { p ->
-                val stale = LocationUtils.isStale(p.recordedAt)
-                ListItem(
-                    headlineContent = { Text(p.participantName) },
-                    supportingContent = { Text("±${p.accuracyMeters.toInt()} m accuracy") },
-                    leadingContent = { Icon(Icons.Default.PersonPinCircle, null, tint = if (stale) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary) },
-                    trailingContent = { Text(if (stale) "STALE" else "LIVE", style = MaterialTheme.typography.labelMedium, color = if (stale) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary) }
-                )
-                HorizontalDivider()
-            }
-            item { Spacer(Modifier.height(16.dp)) }
         }
     }
-}
-
-@Composable
-private fun SummaryCard(value: String, label: String, modifier: Modifier = Modifier) {
-    ElevatedCard(modifier) {
-        Column(Modifier.padding(12.dp)) {
-            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
-            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+    editing?.let {checkpoint->CheckpointEditor(checkpoint,{editing=null}){row,callback->bvm.saveCheckpoint(row,callback)}}
+    if(routeOpen) ModalBottomSheet(onDismissRequest={routeOpen=false}) {
+        Column(Modifier.fillMaxWidth().heightIn(max=480.dp).verticalScroll(rememberScrollState()).padding(24.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
+            Text("Route checkpoints",style=MaterialTheme.typography.titleLarge)
+            cps.forEach{checkpoint->Row(Modifier.fillMaxWidth(),verticalAlignment=Alignment.CenterVertically){
+                TextButton(onClick={editing=checkpoint;routeOpen=false},modifier=Modifier.weight(1f)){Text("${checkpoint.orderIndex}. ${checkpoint.name}")}
+                if(active.isActive) IconButton(onClick={bvm.removeCheckpoint(checkpoint)}){Icon(Icons.Default.DeleteOutline,"Remove ${checkpoint.name}")}
+            }}
+            if(active.isActive) Button(onClick={routeOpen=false;adding=true;tab=0},modifier=Modifier.fillMaxWidth()){Text("Add checkpoint on map")}
+            bvm.connectionMessage.value?.let{Text(it,color=MaterialTheme.colorScheme.error)}
         }
     }
+    if(confirmClose) AlertDialog(onDismissRequest={confirmClose=false},title={Text("Complete this session?")},text={Text("Location sharing stops and new check-ins are disabled. Existing records remain available.")},confirmButton={TextButton(onClick={confirmClose=false;bvm.closeSession()}){Text("Complete session")}},dismissButton={TextButton(onClick={confirmClose=false}){Text("Cancel")}})
 }

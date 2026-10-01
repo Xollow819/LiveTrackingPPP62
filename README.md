@@ -1,73 +1,29 @@
-# Live Tracking PPP62
+# Live Tracking PPP62 / PPPVenza
 
-Android application for supervised student practice in fish transportation and distribution logistics. Students join a practical session, share one live beacon per team vehicle, and record evidence at route checkpoints. Lecturers monitor progress, review exceptions, configure checkpoints, and export check-in reports.
+Native Android app for supervised fish transportation practicals. Lecturers create field sessions and routes; students join with a code, share location, and capture checkpoint evidence.
 
-## V1 capabilities
+## Current app
 
-### Student
-- Join an active session using the demo code `PPP6201`.
-- Start, pause, resume, or finish Android foreground GPS tracking.
-- Continue tracking with the screen off, subject to Android background-location settings.
-- View OpenStreetMap checkpoints without a paid API key.
-- Check in with water temperature, consignment weight, fish condition, notes, GPS distance, and camera evidence.
-- Save evidence offline with Pending or Flagged status.
-
-### Lecturer
-- Monitor team vehicle locations and Live, Stale, Paused, or Finished states.
-- Filter participants by team.
-- See session metrics and exceptions.
-- Add ordered checkpoints with coordinates and a 20–500 m arrival radius.
-- Review check-ins and export a CSV report through Android sharing.
-
-### Engineering
-- Kotlin, Jetpack Compose, Material 3, and Navigation Compose.
-- Room database for sessions, checkpoints, evidence, and latest locations.
-- Foreground location service compatible with Android 14/15 declarations.
-- WorkManager synchronization hook with network constraints.
-- Camera evidence stored in private app storage through FileProvider.
-- OpenStreetMap through osmdroid.
-- Unit tests for proximity and 90-second staleness rules.
-- GitHub Actions build, lint, test, and debug-APK artifact.
+- Liquid Glass inspired Compose interface with light/dark appearance, Instrument Sans, floating map controls and an opaque-panel accessibility preference.
+- Standard OpenStreetMap and keyless EOX Sentinel-2 satellite layers, remembered across launches. Search sits above GPS in the upper-right corner. Checkpoint help retracts to an information control.
+- Lecturer email accounts, session history, route creation/editing, checkpoint instructions and evidence requirements, student/team roster, submission review and CSV export.
+- Student session join, real foreground-service sharing controls, checkpoint evidence/camera capture, queued uploads and retry status. Optional measurements remain optional; exceptions upload with their own review flag.
+- Supabase authentication, realtime session snapshots and private evidence storage. Room caches routes/evidence; WorkManager retries stable-ID uploads and queued positions. Server policies enforce session membership and lecturer ownership.
+- Explicit Room migration preserves installed data. Existing legacy sessions require administrator ownership review when upgrading Supabase.
 
 ## Run
 
-1. Install Android Studio Ladybug or newer and JDK 17.
-2. Clone the repository and open its root directory.
-3. Let Android Studio install Android SDK 35 and sync Gradle.
-4. Run the `app` configuration on an Android 8.0+ device.
-5. Grant camera, precise location, and notification permissions. Enable **Allow all the time** location separately in Android settings for uninterrupted screen-off tracking.
-6. Select Student and use join code `PPP6201`, or select Lecturer to inspect the seeded demonstration session.
+Open the repository in an Android Studio version supporting AGP 9.1.1, use JDK 17, and install Android SDK 37. Run on Android 8.0 or newer. Location sharing starts from the visible app and uses a foreground notification; grant location, camera and notification permissions when prompted.
 
-Command-line verification:
+Configure the existing Supabase project and apply its migration using [SETUP.md](backend/supabase/SETUP.md). There is no seeded demonstration join code. Debug builds without project configuration show an unavailable state; release builds reject missing configuration. Never bundle a service-role key.
 
-```bash
-./gradlew testDebugUnitTest lintDebug assembleDebug
+```sh
+./gradlew :app:assembleDebug :app:testDebugUnitTest :app:lintDebug
+./gradlew :app:connectedDebugAndroidTest
 ```
 
-## Map types
+Satellite imagery needs no API key. EOX imagery is licensed for academic/noncommercial use under CC BY-NC-SA 4.0, with linked attribution retained in the app. It provides landscape detail. OpenStreetMap usage must follow its [tile policy](https://operations.osmfoundation.org/policies/tiles/).
 
-The app uses OpenStreetMap raster tiles through osmdroid, so it has no Google Maps key or billing dependency. The public OSM tile service is appropriate for development and small pilots only. Follow the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and use a dedicated provider or self-hosted tiles for a high-volume deployment.
+[Design direction](docs/DESIGN.md) · [Verification and remaining acceptance](docs/VERIFICATION.md) · [Interface screenshots](docs/screenshots)
 
-The layers button on each map switches between **Standard** and **Satellite**, and remembers your choice. Satellite imagery uses MapTiler; Standard remains available without a provider key.
-
-To enable satellite imagery, add a MapTiler client API key to gitignored `local.properties`, then rebuild:
-
-```properties
-MAPTILER_API_KEY=your_maptiler_client_key
-```
-
-The app reads zoom limits and attribution from MapTiler's satellite TileJSON. Satellite loading failures offer Retry and Standard actions. See the [MapTiler Tiles API](https://docs.maptiler.com/cloud/api/tiles/) for provider configuration and account requirements.
-
-## Cloud synchronization boundary
-
-V1 is fully functional on one device and deliberately does not embed shared cloud credentials. `PPP62_SYNC_ENDPOINT` can be supplied as a Gradle property and `SyncWorker` is the integration boundary. A production multi-device deployment still needs an authenticated Firebase/Supabase/institution backend, access rules, consent and retention policies, and server acknowledgement before Pending records are marked Synced.
-
-Do not place administrator secrets in `local.properties`, Gradle files, or the APK. Mobile clients must use short-lived user authentication and server-enforced role/session authorization.
-
-## Privacy checklist
-
-- Obtain informed location and photo consent before each practical session.
-- Track only while an active session is visible through the foreground notification.
-- Set a retention period for precise location history and evidence.
-- Restrict lecturers to their own sessions and students to their assigned team.
-- Document manual-override and out-of-radius review procedures.
+Local checks pass. Live Supabase deployment and multi-device acceptance require project configuration/access; real GPS, camera lifecycle, background battery behavior and glass performance still require physical-device verification.

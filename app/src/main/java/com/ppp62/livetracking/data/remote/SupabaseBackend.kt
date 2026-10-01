@@ -1,7 +1,13 @@
 package com.ppp62.livetracking.data.remote
 
+import io.github.jan.supabase.auth.FlowType
+import io.github.jan.supabase.auth.handleDeeplinks
 import io.github.jan.supabase.auth.Auth
 import io.github.jan.supabase.auth.auth
+import io.github.jan.supabase.auth.providers.builtin.Email
+import io.github.jan.supabase.postgrest.postgrest
+import kotlinx.serialization.json.*
+import kotlin.time.Duration.Companion.minutes
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
 import io.github.jan.supabase.postgrest.from
@@ -13,8 +19,10 @@ import io.github.jan.supabase.realtime.realtime
 import io.github.jan.supabase.storage.Storage
 import io.github.jan.supabase.storage.storage
 import io.ktor.client.engine.android.Android
+import io.ktor.http.ContentType
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.merge
 import java.util.UUID
 
 /**
@@ -24,10 +32,11 @@ import java.util.UUID
  *   Supabase dashboard under Authentication -> Providers).
  * - Students upsert their latest position; lecturers subscribe via Realtime.
  * - Evidence photos go to the `evidence` storage bucket.
- * - Everything here is best-effort: callers must keep the local Room database
- *   as the source of truth when the backend is unconfigured or offline.
+ * - Supabase owns shared data; Room caches session data and queues evidence retries.
  */
 class SupabaseBackend(private val config: BackendConfig) {
+    val recoveryRequested=kotlinx.coroutines.flow.MutableStateFlow(false)
+    private val wireJson = Json {encodeDefaults=true}
 
     @Volatile private var client: io.github.jan.supabase.SupabaseClient? = null
     @Volatile private var clientKey: String? = null
@@ -41,7 +50,7 @@ class SupabaseBackend(private val config: BackendConfig) {
         if (client == null || clientKey != cacheKey) {
             client = createSupabaseClient(supabaseUrl = url, supabaseKey = key) {
                 httpEngine = Android.create()
-                install(Auth)
+                install(Auth) { scheme="pppvenza";host="auth";flowType=FlowType.PKCE }
                 install(Postgrest)
                 install(Realtime)
                 install(Storage)
@@ -56,6 +65,7 @@ class SupabaseBackend(private val config: BackendConfig) {
     /** Signs in anonymously if needed; returns the auth user id or null. */
     suspend fun ensureSignedIn(): String? {
         val c = client() ?: return null
+        c.auth.awaitInitialization()
         return try {
             c.auth.currentUserOrNull()?.id ?: run {
                 c.auth.signInAnonymously()
@@ -91,43 +101,66 @@ class SupabaseBackend(private val config: BackendConfig) {
         }.decodeSingleOrNull<SessionRow>()
     }
 
-    suspend fun createSession(code: String, title: String, pin: String): SessionRow {
-        val c = client() ?: throw IllegalStateException("Backend not configured")
-        ensureSignedIn() ?: throw IllegalStateException("Sign-in failed")
-        val row = SessionRow(id = UUID.randomUUID().toString(), code = code.trim().uppercase(), title = title.trim(), lecturerPin = pin.trim())
-        // Upsert may return no representation depending on server settings;
-        // fall back to a fresh read instead of crashing on decode.
-        val inserted = runCatching {
-            c.from("tracking_sessions").upsert(row) { onConflict = "code" }.decodeSingle<SessionRow>()
-        }.getOrNull()
-        return inserted ?: findSession(row.code) ?: row
+    suspend fun signIn(email: String, password: String) {
+        val c = client() ?: error("Backend not configured")
+        c.auth.signInWith(Email) { this.email = email.trim(); this.password = password }
     }
-
-    suspend fun joinSession(sessionId: String, userId: String, displayName: String, role: String) {
-        val c = client() ?: throw IllegalStateException("Backend not configured")
-        c.from("session_participants").upsert(
-            ParticipantRow(sessionId = sessionId, userId = userId, displayName = displayName, role = role)
-        ) { onConflict = "session_id,user_id" }
+    suspend fun signUp(email: String, password: String) {
+        val c = client() ?: error("Backend not configured")
+        c.auth.signUpWith(Email) { this.email = email.trim(); this.password = password }
+    }
+    suspend fun resetPassword(email: String) {
+        val c = client() ?: error("Backend not configured")
+        c.auth.resetPasswordForEmail(email.trim(),redirectUrl="pppvenza://auth?recovery=1")
+    }
+    suspend fun handleAuthIntent(intent:android.content.Intent) {
+        val c=client() ?: return
+        c.handleDeeplinks(intent,onSessionSuccess={
+            if(intent.data?.getQueryParameter("recovery")=="1") recoveryRequested.value=true
+        })
+    }
+    suspend fun changePassword(password:String) {
+        require(password.length>=8) {"Use at least eight characters"}
+        requireNotNull(client()).auth.updateUser { this.password=password }
+        recoveryRequested.value=false
+    }
+    suspend fun signOut() {client()?.auth?.signOut()}
+    suspend fun isLecturerSignedIn(): Boolean = client()?.auth?.currentUserOrNull()?.email?.isNotBlank() == true
+    suspend fun createSession(code: String, title: String, checkpoints: List<CheckpointRow>): SessionRow {
+        val c = client() ?: error("Backend not configured")
+        return c.postgrest.rpc("create_field_session", buildJsonObject {
+            put("p_code", code); put("p_title", title)
+            put("p_checkpoints", wireJson.encodeToJsonElement(checkpoints))
+        }).decodeSingle<SessionRow>()
+    }
+    suspend fun joinByCode(code: String, displayName: String, team: String): SessionRow {
+        val c = client() ?: error("Backend not configured")
+        return c.postgrest.rpc("join_field_session", buildJsonObject {
+            put("p_code", code.trim().uppercase()); put("p_name", displayName.trim()); put("p_team", team.trim())
+        }).decodeSingle<SessionRow>()
+    }
+    suspend fun membership(sessionId: String, userId: String): ParticipantRow? = client()?.from("session_participants")?.select {
+        filter { eq("session_id", sessionId); eq("user_id", userId) }
+    }?.decodeSingleOrNull<ParticipantRow>()
+    suspend fun roster(sessionId: String): List<ParticipantRow> = requireNotNull(client()).from("session_participants").select {
+        filter { eq("session_id", sessionId) }
+    }.decodeList()
+    suspend fun history(): List<SessionRow> = requireNotNull(client()).from("tracking_sessions").select().decodeList()
+    suspend fun finishSession(sessionId: String) {
+        requireNotNull(client()).postgrest.rpc("close_field_session", buildJsonObject { put("p_session", sessionId) })
     }
 
     // ------------------------------------------------------------------ positions
 
     /** Publishes the student's latest position (upsert keyed on session+user). */
-    suspend fun publishPosition(sessionId: String, userId: String, displayName: String, lat: Double, lng: Double, accuracy: Double?) {
-        val c = client() ?: return
-        try {
-            c.from("live_positions").upsert(
-                LivePositionRow(sessionId = sessionId, userId = userId, displayName = displayName, lat = lat, lng = lng, accuracy = accuracy)
-            ) { onConflict = "session_id,user_id" }
-        } catch (_: Exception) { /* offline or backend hiccup: local Room keeps the truth */ }
+    suspend fun publishPosition(sessionId: String, userId: String, displayName: String, lat: Double, lng: Double, accuracy: Double?, recordedAt: Long = System.currentTimeMillis(), team: String = "", state: String = "LIVE", eventAt:Long=System.currentTimeMillis()) {
+        val c = client() ?: error("Backend not configured")
+        c.from("live_positions").upsert(LivePositionRow(sessionId, userId, displayName, lat, lng, accuracy,
+            team, state, java.time.Instant.ofEpochMilli(recordedAt).toString(),eventAt=java.time.Instant.ofEpochMilli(eventAt).toString())) { onConflict = "session_id,user_id" }
     }
-
-    suspend fun loadPositions(sessionId: String): List<LivePositionRow> {
-        val c = client() ?: return emptyList()
-        return try {
-            c.from("live_positions").select { filter { eq("session_id", sessionId) } }.decodeList()
-        } catch (_: Exception) { emptyList() }
-    }
+    suspend fun loadPositions(sessionId: String): List<LivePositionRow> = requireNotNull(client()).from("live_positions").select {
+        filter { eq("session_id", sessionId) }
+    }.decodeList()
 
     /**
      * Emits the full position list for a session, refreshing on every Realtime
@@ -138,12 +171,14 @@ class SupabaseBackend(private val config: BackendConfig) {
         emit(loadPositions(sessionId))
         val channel = c.realtime.channel("positions-$sessionId")
         try {
-            val changes = channel.postgresChangeFlow<PostgresAction>("public") {
-                table = "live_positions"
-                filter = "session_id=eq.$sessionId"
+            val changes = listOf("live_positions","checkpoints","submissions","session_participants","tracking_sessions").map { tableName ->
+                channel.postgresChangeFlow<PostgresAction>("public") {
+                    table = tableName
+                    filter = if(tableName=="tracking_sessions") "id=eq.$sessionId" else "session_id=eq.$sessionId"
+                }
             }
             channel.subscribe()
-            changes.collect { emit(loadPositions(sessionId)) }
+            merge(*changes.toTypedArray()).collect { emit(loadPositions(sessionId)) }
         } finally {
             runCatching { c.realtime.removeChannel(channel) }
         }
@@ -152,40 +187,43 @@ class SupabaseBackend(private val config: BackendConfig) {
     // ------------------------------------------------------------------ submissions
 
     /** Uploads JPEG bytes; returns the storage path to store in the submission row. */
-    suspend fun uploadEvidence(sessionId: String, bytes: ByteArray): String {
+    suspend fun uploadEvidence(sessionId: String, userId: String, submissionId: String, bytes: ByteArray): String {
         val c = client() ?: throw IllegalStateException("Backend not configured")
-        val path = "$sessionId/${UUID.randomUUID()}.jpg"
-        c.storage.from("evidence").upload(path, bytes) { upsert = false }
+        val path = "$sessionId/$userId/$submissionId.jpg"
+        c.storage.from("evidence").upload(path, bytes) { upsert = true;contentType=ContentType.Image.JPEG }
         return path
     }
 
-    /** Synchronous public URL (bucket is public, no auth needed). */
+    /** Short-lived authorised URL for the private evidence bucket. */
     suspend fun evidenceUrl(path: String): String? {
         val c = client() ?: return null
-        return runCatching { c.storage.from("evidence").publicUrl(path) }.getOrNull()
+        return runCatching { c.storage.from("evidence").createSignedUrl(path, 10.minutes) }.getOrNull()
     }
 
     suspend fun submitEvidence(row: SubmissionRow) {
         val c = client() ?: throw IllegalStateException("Backend not configured")
-        c.from("submissions").insert(row)
+        c.postgrest.rpc("submit_field_evidence", buildJsonObject { put("p_record", wireJson.encodeToJsonElement(row)) })
     }
 
+    suspend fun submissionById(id:String):SubmissionRow? = requireNotNull(client()).from("submissions").select {filter{eq("id",id)}}.decodeSingleOrNull<SubmissionRow>()
     suspend fun listSubmissions(sessionId: String): List<SubmissionRow> {
-        val c = client() ?: return emptyList()
-        return try {
+        val c = client() ?: error("Backend not configured")
+        return run {
             c.from("submissions").select { filter { eq("session_id", sessionId) } }.decodeList()
-        } catch (_: Exception) { emptyList() }
+        }
     }
 
     // ------------------------------------------------------------------ checkpoints
 
     suspend fun listCheckpoints(sessionId: String): List<CheckpointRow> {
-        val c = client() ?: return emptyList()
-        return try {
+        val c = client() ?: error("Backend not configured")
+        return run {
             c.from("checkpoints").select { filter { eq("session_id", sessionId) } }.decodeList()
-        } catch (_: Exception) { emptyList() }
+        }
     }
 
+    suspend fun saveCheckpoint(row:CheckpointRow) { requireNotNull(client()).postgrest.rpc("save_field_checkpoint",buildJsonObject{put("p_checkpoint",wireJson.encodeToJsonElement(row))}) }
+    suspend fun removeCheckpoint(id:String) {requireNotNull(client()).from("checkpoints").delete{filter{eq("id",id)}}}
     suspend fun addCheckpoint(row: CheckpointRow) {
         val c = client() ?: throw IllegalStateException("Backend not configured")
         c.from("checkpoints").insert(row.copy(id = row.id ?: UUID.randomUUID().toString()))

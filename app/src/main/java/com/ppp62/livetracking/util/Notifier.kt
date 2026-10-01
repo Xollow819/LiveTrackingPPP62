@@ -11,7 +11,7 @@ import androidx.core.app.NotificationCompat
 
 /**
  * Local notifications for Find-My-style arrival/departure alerts.
- * POST_NOTIFICATIONS is requested at launch in MainActivity; posting without
+ * POST_NOTIFICATIONS is requested when sharing starts; posting without
  * the grant is a silent no-op.
  */
 object Notifier {

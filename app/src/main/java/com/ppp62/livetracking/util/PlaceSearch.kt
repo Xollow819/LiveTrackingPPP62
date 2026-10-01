@@ -1,6 +1,9 @@
 package com.ppp62.livetracking.util
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import java.net.HttpURLConnection
@@ -15,9 +18,13 @@ data class PlaceResult(val name: String, val detail: String, val lat: Double, va
  * Nominatim usage policy.
  */
 object PlaceSearch {
+    private val lock = Mutex()
+    private var lastRequest = 0L
     suspend fun search(query: String): List<PlaceResult> = withContext(Dispatchers.IO) {
         if (query.isBlank()) return@withContext emptyList()
-        runCatching {
+        lock.withLock {
+            delay((1000-(android.os.SystemClock.elapsedRealtime()-lastRequest)).coerceAtLeast(0))
+            lastRequest=android.os.SystemClock.elapsedRealtime()
             val url = URL(
                 "https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&addressdetails=0&q=" +
                     URLEncoder.encode(query.trim(), "UTF-8")
@@ -28,8 +35,10 @@ object PlaceSearch {
                 connectTimeout = 12_000
                 readTimeout = 12_000
             }
-            if (conn.responseCode != HttpURLConnection.HTTP_OK) return@runCatching emptyList<PlaceResult>()
-            val body = conn.inputStream.bufferedReader().readText()
+            val body = try {
+                check(conn.responseCode == HttpURLConnection.HTTP_OK) { "Search service unavailable" }
+                conn.inputStream.bufferedReader().use { it.readText() }
+            } finally { conn.disconnect() }
             val arr = JSONArray(body)
             List(arr.length()) { i ->
                 val o = arr.getJSONObject(i)
@@ -41,6 +50,6 @@ object PlaceSearch {
                     lon = o.optDouble("lon", Double.NaN)
                 )
             }.filter { it.lat.isFinite() && it.lon.isFinite() }
-        }.getOrDefault(emptyList())
+        }
     }
 }

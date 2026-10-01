@@ -19,6 +19,8 @@ jobs:
           cache: gradle
       - name: Verify wrapper
         uses: gradle/actions/wrapper-validation@v4
+      - name: Install compile SDK
+        run: sdkmanager "platforms;android-37"
       - name: Unit tests, lint, and debug APK
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
       - name: Upload debug APK

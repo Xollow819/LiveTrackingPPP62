@@ -31,6 +31,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
 
     fun setSessionCheckpoints(list: List<CheckpointEntity>) { sessionCheckpoints.value = list }
+    fun resetSession() { repository.selectSession(null); profile.value = StudentProfile(); sessionCheckpoints.value = emptyList() }
 
     /** Field join for online sessions: no local demo session lookup, just the profile. */
     fun joinField(name: String, team: String) {
@@ -38,44 +39,24 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         message.value = "Joined the field session"
     }
 
-    fun join(code: String, name: String, team: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
-        val found = repository.joinSession(code)
-        val valid = found != null && name.isNotBlank() && team.isNotBlank()
-        if (valid) profile.value = StudentProfile(name.trim(), team.trim(), true)
-        message.value = if (valid) "Joined ${found!!.name}" else "Check the join code, name, and team"
-        onResult(valid)
+    fun submit(checkpoint: CheckpointEntity, temperature: Double?, weight: Double?, condition: FishCondition, notes: String, photoUri: String?, latitude: Double?, longitude: Double?, onDone: () -> Unit) = viewModelScope.launch {
+        val app = getApplication<PPP62Application>()
+        try {
+            val uid = app.backend.ensureSignedIn() ?: app.backendConfig.verifiedUser().takeIf {
+                it.isNotBlank() && app.backendConfig.onlineSession()?.second==checkpoint.sessionId
+            } ?: error("Sign in before recording evidence")
+            require((temperature == null && !checkpoint.requiresTemperature || temperature?.isFinite() == true) && (weight == null && !checkpoint.requiresWeight || weight?.let {it.isFinite() && it>=0} == true)) { "Enter valid measurements" }
+            repository.submitCheckIn(checkpoint, profile.value.name, profile.value.team, temperature, weight, condition, notes, photoUri, latitude, longitude, uid)
+            com.ppp62.livetracking.service.SyncWorker.enqueue(app)
+            message.value = "Check-in saved · upload queued"
+            onDone()
+        } catch (e: Exception) { message.value = e.message ?: "Unable to save check-in" }
     }
 
-    fun submit(checkpoint: CheckpointEntity, temperature: Double, weight: Double, condition: FishCondition, notes: String, photoUri: String?, latitude: Double?, longitude: Double?, onDone: () -> Unit) = viewModelScope.launch {
-        repository.submitCheckIn(checkpoint, profile.value.name, profile.value.team, temperature, weight, condition, notes, photoUri, latitude, longitude)
-        // Best-effort online upload: photo to Storage + row to Supabase. Local Room stays the truth.
-        val uploaded = runCatching {
-            val app = getApplication<PPP62Application>()
-            val session = app.backendConfig.onlineSession() ?: return@runCatching false
-            val uid = app.backend.ensureSignedIn() ?: return@runCatching false
-            val bytes = photoUri?.let { uri ->
-                app.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { it.readBytes() }
-            }
-            val path = bytes?.let { app.backend.uploadEvidence(session.second, it) }
-            app.backend.submitEvidence(
-                SubmissionRow(
-                    sessionId = session.second, userId = uid, displayName = profile.value.name,
-                    checkpointName = checkpoint.name, note = notes, photoPath = path,
-                    lat = latitude, lng = longitude,
-                    temperatureC = temperature, weightKg = weight, condition = condition.name
-                )
-            )
-            true
-        }.getOrDefault(false)
-        message.value = if (uploaded) "Check-in saved + uploaded ✓" else "Check-in saved locally"
-        onDone()
+    fun retryUploads() = viewModelScope.launch {
+        val app=getApplication<PPP62Application>()
+        app.backend.ensureSignedIn()?.let{app.database.dao().retryFailed(it)}
+        com.ppp62.livetracking.service.SyncWorker.enqueue(app)
     }
-
-    fun addCheckpoint(name: String, lat: Double, lng: Double, radius: Double, instructions: String, onDone: () -> Unit) = viewModelScope.launch {
-        repository.addCheckpoint(name, lat, lng, radius, instructions, checkpoints.value.size + 1)
-        message.value = "Checkpoint created"
-        onDone()
-    }
-
     fun clearMessage() { message.value = null }
 }

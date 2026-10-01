@@ -1,5 +1,8 @@
 package com.ppp62.livetracking.ui.screens
 
+import com.ppp62.livetracking.ui.components.GlassCard
+import kotlinx.serialization.encodeToString
+
 import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -65,10 +68,12 @@ private fun DraftCheckpoint.toEntity(order: Int) = CheckpointEntity(
 fun LecturerSetupScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit) {
     var step by rememberSaveable { mutableStateOf(0) }
     var title by rememberSaveable { mutableStateOf("") }
-    var pin by rememberSaveable { mutableStateOf("") }
     var detailsError by remember { mutableStateOf<String?>(null) }
-    val drafts = remember { mutableStateListOf<DraftCheckpoint>() }
-    var code by remember { mutableStateOf<String?>(null) }
+    val drafts = rememberSaveable(saver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<DraftCheckpoint>,String>(
+        save = { list -> list.map { kotlinx.serialization.json.Json.encodeToString(it) } },
+        restore = { list -> list.map { kotlinx.serialization.json.Json.decodeFromString<DraftCheckpoint>(it) }.toMutableStateList() }
+    )) { mutableStateListOf<DraftCheckpoint>() }
+    var code by rememberSaveable { mutableStateOf<String?>(null) }
     var creating by remember { mutableStateOf(false) }
     var createError by remember { mutableStateOf<String?>(null) }
 
@@ -83,19 +88,18 @@ fun LecturerSetupScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> U
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when (step) {
-                0 -> DetailsStep(title, { title = it }, pin, { pin = it }, detailsError, onContinue = {
+                0 -> DetailsStep(title, { title = it }, detailsError, onContinue = {
                     detailsError = when {
                         title.isBlank() -> "Give the session a title"
-                        pin.length < 4 -> "Lecturer PIN needs at least 4 characters"
                         else -> null
                     }
                     if (detailsError == null) step = 1
                 })
                 1 -> MapStep(drafts, onContinue = { step = 2 }, onBack = { step = 0 })
-                2 -> CodeStep(title, pin, drafts.toList(), code, creating, createError,
+                2 -> CodeStep(title, drafts.toList(), code, creating, createError,
                     onGenerate = {
                         creating = true; createError = null
-                        bvm.createSessionWithCheckpoints(title.trim(), pin, drafts.toList()) { c, err ->
+                        bvm.createSessionWithCheckpoints(title.trim(), drafts.toList()) { c, err ->
                             creating = false
                             if (c != null) code = c else createError = err
                         }
@@ -109,18 +113,16 @@ fun LecturerSetupScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> U
 @Composable
 private fun DetailsStep(
     title: String, onTitle: (String) -> Unit,
-    pin: String, onPin: (String) -> Unit,
     error: String?,
     onContinue: () -> Unit
 ) {
     Column(Modifier.fillMaxSize().padding(horizontal = 22.dp, vertical = 20.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
         LinearProgressIndicator(progress = { .34f }, Modifier.fillMaxWidth(), trackColor = MaterialTheme.colorScheme.surfaceVariant)
         Text("Start with the basics", style = MaterialTheme.typography.headlineMedium)
-        Text("Give your practical a recognizable name and protect lecturer controls with a PIN.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        ElevatedCard(shape = RoundedCornerShape(24.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        Text("Name the practical. Your lecturer account protects the route and records.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        GlassCard(shape = RoundedCornerShape(24.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 OutlinedTextField(title, onTitle, label = { Text("Session title") }, placeholder = { Text("Morning distribution run") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.DriveFileRenameOutline, null) })
-                OutlinedTextField(pin, onPin, label = { Text("Lecturer PIN") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.VpnKey, null) }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword), supportingText = { Text("Students will only use the join code.") })
             }
         }
         error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
@@ -258,7 +260,7 @@ private fun MapStep(
         )
 
         if (locationMessage != null || permissionDenied) {
-            ElevatedCard(Modifier.align(Alignment.CenterEnd).padding(end = 64.dp, top = 12.dp)) {
+            GlassCard(Modifier.align(Alignment.CenterEnd).padding(end = 64.dp, top = 12.dp)) {
                 Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
                     Text(locationMessage ?: "Location permission is needed to find your position.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.weight(1f))
                     TextButton(onClick = {
@@ -277,7 +279,7 @@ private fun MapStep(
 
         // Keep search controls accessible when the keyboard leaves little map space.
         if (showCheckpointPanel) {
-            ElevatedCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { checkpointPanelHeight = it.height }.padding(12.dp)) {
+            GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { checkpointPanelHeight = it.height }.padding(12.dp)) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (drafts.isNotEmpty()) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -314,8 +316,8 @@ private fun MapStep(
             lat = geo.latitude, lng = geo.longitude,
             order = drafts.size + 1,
             onDismiss = { pendingPin = null },
-            onSave = { name, radius, instructions ->
-                drafts.add(DraftCheckpoint(name, geo.latitude, geo.longitude, radius, instructions))
+            onSave = { name, radius, instructions, photo, temperature, weight ->
+                drafts.add(DraftCheckpoint(name, geo.latitude, geo.longitude, radius, instructions, photo, temperature, weight))
                 pendingPin = null
             }
         )
@@ -323,20 +325,24 @@ private fun MapStep(
 }
 
 @Composable
-private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Unit, onSave: (String, Double, String) -> Unit) {
+private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Unit, onSave: (String, Double, String, Boolean, Boolean, Boolean) -> Unit) {
     var name by remember { mutableStateOf("") }
     var radius by remember { mutableStateOf("75") }
     var instructions by remember { mutableStateOf("") }
+    var photo by remember {mutableStateOf(true)}; var temperature by remember {mutableStateOf(true)}; var weight by remember {mutableStateOf(true)}
     var attempted by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("Checkpoint $order") },
         text = {
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Column(Modifier.verticalScroll(rememberScrollState()),verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("%.5f, %.5f".format(lat, lng), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 OutlinedTextField(name, { name = it }, label = { Text("Checkpoint name *") }, singleLine = true)
                 OutlinedTextField(radius, { radius = it }, label = { Text("Arrival radius (m)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), singleLine = true)
                 OutlinedTextField(instructions, { instructions = it }, label = { Text("Instructions for students") }, minLines = 2)
+                Row(verticalAlignment=Alignment.CenterVertically){Checkbox(photo,{photo=it});Text("Require photo")}
+                Row(verticalAlignment=Alignment.CenterVertically){Checkbox(temperature,{temperature=it});Text("Require temperature")}
+                Row(verticalAlignment=Alignment.CenterVertically){Checkbox(weight,{weight=it});Text("Require weight")}
                 if (attempted) Text("Name the checkpoint and use a radius of 20–500 m.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
             }
         },
@@ -344,7 +350,7 @@ private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Uni
             TextButton(onClick = {
                 attempted = true
                 val r = radius.toDoubleOrNull()
-                if (name.isNotBlank() && r != null && r in 20.0..500.0) onSave(name.trim(), r, instructions.trim())
+                if (name.isNotBlank() && r != null && r in 20.0..500.0) onSave(name.trim(), r, instructions.trim(), photo, temperature, weight)
             }) { Text("Pin checkpoint") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }
@@ -354,7 +360,6 @@ private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Uni
 @Composable
 private fun CodeStep(
     title: String,
-    pin: String,
     drafts: List<DraftCheckpoint>,
     code: String?,
     creating: Boolean,

@@ -24,9 +24,11 @@ class PPP62Application : Application(), Configuration.Provider {
         OsmConfiguration.getInstance().apply {
             userAgentValue = packageName
             load(this@PPP62Application, getSharedPreferences("osmdroid", MODE_PRIVATE))
+            tileFileSystemCacheMaxBytes = 64L * 1024 * 1024
+            tileFileSystemCacheTrimBytes = 48L * 1024 * 1024
         }
         database = Room.databaseBuilder(this, AppDatabase::class.java, "ppp62.db")
-            .fallbackToDestructiveMigration()
+            .addMigrations(com.ppp62.livetracking.data.DatabaseMigrations.FROM_1_TO_2)
             .build()
         repository = PPPRepository(database.dao())
         backendConfig = BackendConfig(this)

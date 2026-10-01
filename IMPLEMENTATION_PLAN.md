@@ -1,3 +1,5 @@
+> Historical initial proposal. Current implementation, Supabase setup, and verification are documented in [README.md](README.md) and [docs/VERIFICATION.md](docs/VERIFICATION.md).
+
 # Live Tracking PPP62 - Supervised Student Practice in Fish Transportation & Distribution
 
 An Android application designed for supervised field practice in aquaculture fish transportation and distribution logistics. Students share live GPS location during active practical sessions and log checkpoint arrival, water/fish temperature, transport conditions, weight, and photographic evidence. Lecturers monitor student progress, review submissions and exceptions, and manage customizable checkpoints in real time.

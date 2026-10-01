@@ -9,7 +9,7 @@ data class SessionRow(
     val id: String,
     val code: String,
     val title: String = "",
-    @SerialName("lecturer_pin") val lecturerPin: String = "",
+    @SerialName("owner_id") val ownerId: String? = null,
     @SerialName("is_active") val isActive: Boolean = true,
     @SerialName("created_at") val createdAt: String? = null
 )
@@ -22,6 +22,7 @@ data class ParticipantRow(
     @SerialName("user_id") val userId: String,
     @SerialName("display_name") val displayName: String = "",
     val role: String = "student",
+    val team: String = "",
     @SerialName("joined_at") val joinedAt: String? = null
 )
 
@@ -34,8 +35,11 @@ data class LivePositionRow(
     val lat: Double,
     val lng: Double,
     val accuracy: Double? = null,
+    val team: String = "",
+    @SerialName("tracking_state") val trackingState: String = "LIVE",
     @SerialName("recorded_at") val recordedAt: String? = null,
-    @SerialName("updated_at") val updatedAt: String? = null
+    @SerialName("updated_at") val updatedAt: String? = null,
+    @SerialName("event_at") val eventAt: String? = null
 )
 
 /** Row in public.submissions */
@@ -45,6 +49,9 @@ data class SubmissionRow(
     @SerialName("session_id") val sessionId: String,
     @SerialName("user_id") val userId: String,
     @SerialName("display_name") val displayName: String = "",
+    @SerialName("checkpoint_id") val checkpointId: String? = null,
+    @SerialName("exception_reason") val exceptionReason: String? = null,
+    val team: String = "",
     @SerialName("checkpoint_name") val checkpointName: String = "",
     val note: String = "",
     @SerialName("photo_path") val photoPath: String? = null,
@@ -65,5 +72,10 @@ data class CheckpointRow(
     val lat: Double,
     val lng: Double,
     @SerialName("radius_m") val radiusM: Double = 50.0,
+    @SerialName("order_index") val orderIndex: Int = 0,
+    val instructions: String = "",
+    @SerialName("requires_photo") val requiresPhoto: Boolean = true,
+    @SerialName("requires_temperature") val requiresTemperature: Boolean = true,
+    @SerialName("requires_weight") val requiresWeight: Boolean = true,
     @SerialName("created_at") val createdAt: String? = null
 )

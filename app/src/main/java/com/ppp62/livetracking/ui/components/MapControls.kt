@@ -19,7 +19,6 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.contentDescription
-import com.ppp62.livetracking.BuildConfig
 import kotlinx.coroutines.delay
 
 enum class MapStyle { Standard, Satellite }
@@ -30,7 +29,7 @@ private fun mapPreferences(context: Context) = context.getSharedPreferences("map
 fun rememberMapStyle(): MapStyle {
     val context = LocalContext.current
     val preferences = remember(context) { mapPreferences(context) }
-    fun read() = if (preferences.getString("style", null) == MapStyle.Satellite.name && BuildConfig.MAPTILER_API_KEY.isNotBlank()) MapStyle.Satellite else MapStyle.Standard
+    fun read() = if (preferences.getString("style", null) == MapStyle.Satellite.name) MapStyle.Satellite else MapStyle.Standard
     var style by remember { mutableStateOf(read()) }
     DisposableEffect(preferences) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, key -> if (key == "style") style = read() }
@@ -46,9 +45,8 @@ fun saveMapStyle(context: Context, style: MapStyle) {
 
 @Composable
 fun MapControlButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, busy: Boolean = false) {
-    Surface(onClick = onClick, modifier = modifier.size(48.dp).semantics { contentDescription = description }, shape = CircleShape,
-        color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
-        Box(contentAlignment = Alignment.Center) {
+    GlassCard(onClick = onClick, modifier = modifier.size(48.dp).semantics { contentDescription = description }, shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             else Icon(icon, description, tint = MaterialTheme.colorScheme.onSurfaceVariant)
         }
@@ -65,13 +63,13 @@ fun MapLayersControl(style: MapStyle, onSelect: (MapStyle) -> Unit, modifier: Mo
             Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp).padding(bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Text("Map type", style = MaterialTheme.typography.titleLarge)
                 MapStyle.entries.forEach { option ->
-                    val available = option != MapStyle.Satellite || BuildConfig.MAPTILER_API_KEY.isNotBlank()
+                    val available = true
                     OutlinedCard(onClick = { onSelect(option); open = false }, enabled = available, modifier = Modifier.fillMaxWidth()) {
                         Row(Modifier.padding(16.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                             Icon(if (option == MapStyle.Standard) Icons.Default.Map else Icons.Default.SatelliteAlt, null)
                             Column(Modifier.weight(1f)) {
                                 Text(option.name, style = MaterialTheme.typography.titleMedium)
-                                Text(if (!available) "Satellite imagery is not available" else if (option == MapStyle.Standard) "Streets and places" else "Aerial imagery", style = MaterialTheme.typography.bodySmall)
+                                Text(if (!available) "Satellite imagery is not available" else if (option == MapStyle.Standard) "Streets and places" else "Sentinel-2 · landscape detail · educational use", style = MaterialTheme.typography.bodySmall)
                             }
                             if (style == option) Icon(Icons.Default.CheckCircle, "Selected", tint = MaterialTheme.colorScheme.primary)
                         }
@@ -88,13 +86,13 @@ fun CheckpointMapHint(modifier: Modifier = Modifier, visible: Boolean = true) {
     LaunchedEffect(expanded) { if (expanded) { delay(4_000); expanded = false } }
     var drag by remember { mutableFloatStateOf(0f) }
     AnimatedVisibility(visible, modifier = modifier) {
-        Surface(modifier = Modifier.animateContentSize().pointerInput(expanded) {
+        GlassCard(modifier = Modifier.animateContentSize().pointerInput(expanded) {
             detectHorizontalDragGestures(
                 onDragStart = { drag = 0f },
                 onDragEnd = { if (drag < -32.dp.toPx()) expanded = false },
                 onHorizontalDrag = { change, amount -> drag += amount; change.consume() }
             )
-        }, shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.surface, shadowElevation = 3.dp) {
+        }, shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Info, if (expanded) "Collapse checkpoint instructions" else "Show checkpoint instructions", tint = MaterialTheme.colorScheme.primary)

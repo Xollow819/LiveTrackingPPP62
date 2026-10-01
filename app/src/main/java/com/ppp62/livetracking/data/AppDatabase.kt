@@ -18,6 +18,7 @@ class DbConverters {
 interface PPPDao {
     @Query("SELECT * FROM sessions ORDER BY startsAt DESC") fun observeSessions(): Flow<List<SessionEntity>>
     @Query("SELECT * FROM sessions WHERE joinCode = :code LIMIT 1") suspend fun sessionByCode(code: String): SessionEntity?
+    @Query("SELECT * FROM sessions WHERE id = :id LIMIT 1") suspend fun sessionById(id: String): SessionEntity?
     @Query("SELECT COUNT(*) FROM sessions") suspend fun sessionCount(): Int
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertSession(value: SessionEntity)
 
@@ -25,18 +26,28 @@ interface PPPDao {
     @Query("SELECT * FROM checkpoints WHERE id = :id LIMIT 1") suspend fun checkpoint(id: String): CheckpointEntity?
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCheckpoints(values: List<CheckpointEntity>)
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCheckpoint(value: CheckpointEntity)
+    @Query("DELETE FROM checkpoints WHERE sessionId = :sessionId") suspend fun clearCheckpoints(sessionId: String)
+    @Query("SELECT * FROM checkpoints WHERE sessionId = :sessionId ORDER BY orderIndex") suspend fun checkpointsForSession(sessionId: String): List<CheckpointEntity>
+    @Transaction suspend fun replaceCheckpoints(sessionId: String, values: List<CheckpointEntity>) { clearCheckpoints(sessionId); upsertCheckpoints(values) }
     @Delete suspend fun deleteCheckpoint(value: CheckpointEntity)
 
     @Query("SELECT * FROM check_ins WHERE sessionId = :sessionId ORDER BY createdAt DESC") fun observeCheckIns(sessionId: String): Flow<List<CheckInEntity>>
-    @Query("SELECT * FROM check_ins WHERE syncState = 'PENDING' ORDER BY createdAt") suspend fun pendingCheckIns(): List<CheckInEntity>
+    @Query("SELECT * FROM check_ins WHERE syncState IN ('PENDING','FLAGGED') ORDER BY createdAt") suspend fun pendingCheckIns(): List<CheckInEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCheckIn(value: CheckInEntity)
+    @Query("UPDATE check_ins SET syncState='FAILED',uploadError=:error WHERE id=:id") suspend fun failCheckIn(id:String,error:String)
+    @Query("UPDATE check_ins SET syncState='PENDING',uploadError=NULL WHERE syncState='FAILED' AND userId=:userId") suspend fun retryFailed(userId:String)
     @Query("UPDATE check_ins SET syncState = :state WHERE id = :id") suspend fun setCheckInSyncState(id: String, state: SyncState)
+
+    @Query("SELECT * FROM locations WHERE sessionId=:sessionId AND participantId=:userId LIMIT 1") suspend fun ownLocation(sessionId:String,userId:String):LocationEntity?
+    @Query("SELECT * FROM position_outbox") suspend fun pendingPositions(): List<PositionOutboxEntity>
+    @Insert(onConflict=OnConflictStrategy.REPLACE) suspend fun queuePosition(row:PositionOutboxEntity)
+    @Query("DELETE FROM position_outbox WHERE sessionId=:sessionId AND userId=:userId AND eventAt=:eventAt") suspend fun acknowledgePosition(sessionId:String,userId:String,eventAt:Long)
 
     @Query("SELECT * FROM locations WHERE sessionId = :sessionId ORDER BY recordedAt DESC") fun observeLocations(sessionId: String): Flow<List<LocationEntity>>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertLocation(value: LocationEntity)
-    @Query("UPDATE locations SET trackingState = :state, recordedAt = :timestamp WHERE participantId = :participantId") suspend fun setTrackingState(participantId: String, state: TrackingState, timestamp: Long)
+    @Query("UPDATE locations SET trackingState = :state WHERE participantId = :participantId AND sessionId = :sessionId") suspend fun setTrackingState(participantId: String, state: TrackingState, sessionId: String)
 }
 
-@Database(entities = [SessionEntity::class, CheckpointEntity::class, CheckInEntity::class, LocationEntity::class], version = 1, exportSchema = true)
+@Database(entities = [SessionEntity::class, CheckpointEntity::class, CheckInEntity::class, LocationEntity::class, PositionOutboxEntity::class], version = 2, exportSchema = true)
 @TypeConverters(DbConverters::class)
 abstract class AppDatabase : RoomDatabase() { abstract fun dao(): PPPDao }

@@ -20,16 +20,18 @@ import kotlin.coroutines.resume
  */
 object DeviceLocation {
     /** Waits for a newly delivered provider fix, then falls back to a cached fix. */
-    suspend fun currentOrLastKnown(context: Context, timeoutMillis: Long = 15_000L): GeoPoint? {
-        if (!hasPermission(context)) return null
+    suspend fun currentOrLastKnown(context: Context, timeoutMillis: Long = 15_000L): GeoPoint? = currentFix(context, timeoutMillis)?.let { GeoPoint(it.latitude,it.longitude) }
+
+    suspend fun currentFix(context: Context, timeoutMillis: Long = 15_000L): android.location.Location? {
+        if (!hasPermission(context) || !locationEnabled(context)) return null
         val manager = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
         val providers = runCatching { manager.getProviders(true) }.getOrDefault(emptyList())
-        if (providers.isEmpty()) return lastKnown(context)
+        if (providers.isEmpty()) return lastKnownFix(context)
         val fresh = withTimeoutOrNull(timeoutMillis) {
-            suspendCancellableCoroutine<GeoPoint?> { continuation ->
+            suspendCancellableCoroutine<android.location.Location?> { continuation ->
                 val listener = object : LocationListener {
                     override fun onLocationChanged(location: android.location.Location) {
-                        if (continuation.isActive) continuation.resume(GeoPoint(location.latitude, location.longitude))
+                        if (continuation.isActive) continuation.resume(location)
                         runCatching { manager.removeUpdates(this) }
                     }
                 }
@@ -48,7 +50,7 @@ object DeviceLocation {
                 if (!registered && continuation.isActive) continuation.resume(null)
             }
         }
-        return fresh ?: lastKnown(context)
+        return fresh ?: lastKnownFix(context)
     }
 
     fun hasPermission(context: Context): Boolean {
@@ -61,7 +63,9 @@ object DeviceLocation {
         LocationManagerCompat.isLocationEnabled(context.getSystemService(Context.LOCATION_SERVICE) as LocationManager)
     }.getOrDefault(false)
 
-    fun lastKnown(context: Context): GeoPoint? {
+    fun lastKnown(context: Context): GeoPoint? = lastKnownFix(context)?.let { GeoPoint(it.latitude,it.longitude) }
+
+    fun lastKnownFix(context: Context): android.location.Location? {
         if (!hasPermission(context)) return null
         return runCatching {
             val lm = context.getSystemService(Context.LOCATION_SERVICE) as LocationManager
@@ -71,12 +75,11 @@ object DeviceLocation {
                 LocationManager.NETWORK_PROVIDER,
                 LocationManager.PASSIVE_PROVIDER
             ).filter { enabled.contains(it) } + enabled
-            val fix = ordered.distinct().firstNotNullOfOrNull { provider ->
-                try { lm.getLastKnownLocation(provider) }
-                catch (_: SecurityException) { null }
-                catch (_: IllegalArgumentException) { null }
-            }
-            fix?.let { GeoPoint(it.latitude, it.longitude) }
+            ordered.distinct().mapNotNull { provider ->
+                try { lm.getLastKnownLocation(provider) } catch (_: SecurityException) { null } catch (_: IllegalArgumentException) { null }
+            }.filter { System.currentTimeMillis()-it.time in 0..120_000 }
+                .maxByOrNull { it.time }
+
         }.getOrNull()
     }
 }

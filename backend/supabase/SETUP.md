@@ -1,83 +1,37 @@
-# LiveTrackingPPP62 — Free Backend Setup (Supabase)
+# Supabase setup and upgrade
 
-Everything here is **free** and needs **no credit card**. The app works fully
-offline without any of this; the backend only adds live multi-device tracking
-(students' GPS visible on the lecturer's phone) and shared evidence photos.
+The app uses Supabase as its shared source of truth. Room caches the active route and check-ins; WorkManager retries pending evidence. A configured project is required to create or join a session. Satellite maps need no account or API key.
 
-**How it works now:** the Supabase URL + anon key are baked into the APK at
-build time (from the gitignored `local.properties`, never committed to git).
-Students just install the APK — there is no setup screen and nothing to type.
-The lecturer does steps 1–3 once, sends the two keys to whoever builds the
-APK, and every phone is online out of the box.
+## Existing projects
 
-## 1. Create the free Supabase project (~5 minutes)
+Back up the database and evidence bucket before upgrading. Run `migrations/20261002_secure_sessions.sql` in the project's SQL editor. It adds account ownership, checkpoint instructions/requirements, private evidence policies and transactional app functions. It clears legacy plaintext PINs without deleting records.
 
-1. Go to https://supabase.com and sign up (email or GitHub — no card asked).
-2. **New project** → name it e.g. `livetracking-ppp62`, set a database password
-   (save it somewhere), pick the region closest to you (e.g. Singapore).
-3. Wait ~2 minutes for the project to spin up.
+Legacy sessions have no verified account owner. They remain read-only and unavailable to new joins until an administrator explicitly associates `tracking_sessions.owner_id` with the correct lecturer's confirmed `auth.users.id`. Do not assign every legacy session to the first account that signs in. Review legacy memberships before restoring access; the old schema allowed self-assigned membership. Existing legacy public photo links stop working after the bucket becomes private; the app uses authenticated downloads.
 
-Free-tier limits (checked 2026-10-01, verify on supabase.com/pricing):
-500 MB database · 1 GB storage · 5 GB egress/month · 50k auth users/month ·
-2M realtime messages · 200 peak realtime connections. Plenty for class use.
-Note: free projects pause after 7 days of *project* inactivity — open the
-dashboard once a week during the semester, or just before each field day.
+For a fresh project, run `schema.sql`, which includes the migration. Do not rerun the legacy bootstrap against an upgraded project as an upgrade procedure.
 
-## 2. Create the tables (copy-paste, ~3 minutes)
+## Authentication and configuration
 
-1. In the Supabase dashboard open **SQL Editor** → **New query**.
-2. Open `schema.sql` in this folder, copy the whole file, paste it, press **Run**.
-   This creates the tables, the realtime publication, the row-level-security
-   policies, and the `evidence` photo bucket.
+Enable anonymous sign-in for students and email/password authentication for lecturers. Configure confirmation and password reset emails. Add `pppvenza://auth` and `pppvenza://auth?recovery=1` to the authorised redirect URLs; the app exchanges PKCE codes and opens its new-password form for recovery. Lecturers create an account, confirm email if required, then sign in. Students join with code, name and team.
 
-## 3. Enable anonymous sign-in (~1 minute)
+Add the existing project's URL and public anon/client key to gitignored `local.properties`:
 
-The app signs students in anonymously — no email/password for anyone.
+```
+SUPABASE_URL=https://your-project.supabase.co
+SUPABASE_ANON_KEY=your-public-client-key
+```
 
-1. Open **Authentication** → **Providers**.
-2. Find **Anonymous** and turn it **on**.
+Never bundle a service-role key. Release assembly rejects missing configuration. Debug builds without configuration display an honest unavailable state and can be used to review the interface.
 
-## 4. Bake the two keys into the APK (~1 minute)
+Realtime publication includes tracking_sessions, session_participants, checkpoints, live_positions and submissions. The app reloads snapshots every 15 seconds as reconnect recovery. Evidence goes into the private `evidence` bucket, at `session/user/submission.jpg`, compressed as JPEG. Stable submission UUIDs make retries idempotent.
 
-1. Open **Project Settings** (gear icon) → **API**.
-2. Copy the **Project URL** (looks like `https://xyzcompany.supabase.co`)
-   and the **anon public** key (the long `eyJ…` string — this one is safe to
-   ship in the app; never use the `service_role` key in the app).
-3. In the repo checkout, add to `local.properties` (gitignored — never committed):
-   ```
-   SUPABASE_URL=https://xyzcompany.supabase.co
-   SUPABASE_ANON_KEY=eyJ...
-   ```
-4. Build the APK (`assembleDebug` / `assembleRelease`). The app connects
-   automatically on launch — no settings screen, nothing to type per phone.
+## Live acceptance
 
-Keys live only in `local.properties` and inside the built APK — they are
-**not** committed to git.
+1. Sign in as a lecturer, create a route with instructions, and share the code.
+2. Join on a separate student device, verify the route/instructions and real team in the lecturer roster.
+3. Start sharing; verify movement, stationary fixes, pause/resume and fix timestamps.
+4. Disable network, save a check-in with photo, reconnect and verify exactly one server record and uploaded state.
+5. Verify flagged evidence uploads, authenticated photo viewing, and isolation using an unrelated account/session.
+6. Close the session; new joins/check-ins fail, tracking stops, and historical records remain accessible.
 
-## 5. Run a session
-
-**Lecturer phone:**
-1. Lecturer → enter session code (e.g. `PPP6201`) + a lecturer PIN → **Start / join online session**.
-   (First lecturer to use a code creates it; the PIN protects the lecturer view.)
-2. Keep the dashboard open — student dots appear live on the map.
-3. **Submissions** → **Refresh** shows students' checkpoint evidence with photos.
-
-**Student phones:**
-1. Student → join code + name + team → **Join active session**.
-2. **Start tracking** — GPS is published every ~15 s while the backend is reachable.
-   If the network drops, everything keeps working locally and positions resume
-   publishing automatically when connectivity returns.
-
-## Troubleshooting
-
-| Symptom | Fix |
-|---|---|
-| “Anonymous sign-in failed” | Step 3 — the Anonymous provider must be enabled. |
-| “relation does not exist” | Step 2 — the schema.sql was not run (or not fully). |
-| Map shows no students | Check all phones joined the *same code*; lecturer tapped Start/join; students tapped Start tracking. |
-| Photos don’t upload | The `evidence` bucket is created by schema.sql; uploads need network. |
-| Project paused | Free projects pause after 7 days idle — press **Restore** in the dashboard. |
-
-## Files
-
-- `schema.sql` — all tables, policies, realtime, and the storage bucket. Re-running it is safe (uses `if not exists` / drops policies first).
+Physical-device camera, GPS, background service, large-font UI and glass performance checks are required before release. This checkout cannot establish successful live acceptance without project configuration and migration access.

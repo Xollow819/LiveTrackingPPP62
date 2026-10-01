@@ -1,57 +1,61 @@
 package com.ppp62.livetracking.ui.screens
 
-import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Brush
+import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
-import androidx.compose.runtime.Composable
+import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.UserRole
+import com.ppp62.livetracking.ui.components.*
 
 @Composable
-fun WelcomeScreen(onRole: (UserRole) -> Unit) {
-    Column(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).padding(horizontal = 22.dp, vertical = 18.dp), verticalArrangement = Arrangement.spacedBy(18.dp)) {
-        Surface(Modifier.fillMaxWidth().weight(1f).clip(RoundedCornerShape(32.dp)), color = MaterialTheme.colorScheme.primary) {
-            Box(Modifier.fillMaxSize().background(Brush.linearGradient(listOf(MaterialTheme.colorScheme.primary, MaterialTheme.colorScheme.primaryContainer)))) {
-                Column(Modifier.align(Alignment.BottomStart).padding(26.dp), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .12f)) {
-                        Icon(Icons.Default.Route, "", Modifier.padding(13.dp).size(34.dp), tint = MaterialTheme.colorScheme.onPrimary)
-                    }
-                    Text("PPPVenza", style = MaterialTheme.typography.headlineLarge, color = MaterialTheme.colorScheme.onPrimary)
-                    Text("Field practicals, in view.", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.onPrimary)
-                    Text("Live routes, clear checkpoints, and reliable records for every fish transport run.", style = MaterialTheme.typography.bodyLarge, color = MaterialTheme.colorScheme.onPrimary.copy(alpha = .84f))
-                }
-                Icon(Icons.Default.Explore, null, Modifier.align(Alignment.TopEnd).padding(25.dp).size(94.dp), tint = MaterialTheme.colorScheme.onPrimary.copy(alpha = .15f))
+fun WelcomeScreen(onRole: (UserRole) -> Unit, onPreferences: () -> Unit = {}) {
+    val blue=MaterialTheme.colorScheme.primary
+    val ink=MaterialTheme.colorScheme.onBackground
+    Box(Modifier.fillMaxSize()) {
+        Canvas(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).glassSource(LocalGlassState.current)) {
+            val route=Path().apply {
+                moveTo(size.width*.85f,0f)
+                cubicTo(size.width*.1f,size.height*.2f,size.width*1.4f,size.height*.25f,size.width*.48f,size.height*.48f)
+                cubicTo(-size.width*.15f,size.height*.67f,size.width*.9f,size.height*.75f,size.width*.15f,size.height)
             }
+            drawPath(route,blue.copy(alpha=.08f),style=Stroke(100.dp.toPx()))
+            drawPath(route,blue.copy(alpha=.2f),style=Stroke(1.dp.toPx()))
+            drawCircle(blue.copy(alpha=.12f),60.dp.toPx(),Offset(size.width*.72f,size.height*.22f))
+            drawCircle(blue,7.dp.toPx(),Offset(size.width*.72f,size.height*.22f))
         }
-        Text("Choose your role", style = MaterialTheme.typography.titleLarge)
-        RoleCard("Student", "Join a field session and record each stop.", Icons.Default.PersonPinCircle) { onRole(UserRole.STUDENT) }
-        RoleCard("Lecturer", "Plan the route and monitor the group live.", Icons.Default.Dashboard) { onRole(UserRole.LECTURER) }
-        Text("OpenStreetMap  ·  Offline-ready", Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun RoleCard(title: String, body: String, icon: androidx.compose.ui.graphics.vector.ImageVector, onClick: () -> Unit) {
-    ElevatedCard(onClick = onClick, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
-        Row(Modifier.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(14.dp), color = MaterialTheme.colorScheme.primaryContainer) {
-                Icon(icon, null, Modifier.padding(11.dp).size(27.dp), tint = MaterialTheme.colorScheme.onPrimaryContainer)
+        Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
+            Row(verticalAlignment=Alignment.CenterVertically) {
+                Icon(Icons.Default.Route,null,tint=blue,modifier=Modifier.size(30.dp)); Spacer(Modifier.width(10.dp))
+                Text("PPPVenza",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
+                IconButton(onClick=onPreferences){Icon(Icons.Default.Tune,"Preferences")}
             }
-            Spacer(Modifier.width(16.dp))
-            Column(Modifier.weight(1f)) {
-                Text(title, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
-                Text(body, color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium)
+            Spacer(Modifier.height(92.dp))
+            Text("Every stop.\nIn view.",style=MaterialTheme.typography.displayLarge,color=ink)
+            Text("Your field practical, connected. Follow the route, capture the conditions, keep the record.",style=MaterialTheme.typography.bodyLarge,color=MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(36.dp))
+            GlassCard(Modifier.fillMaxWidth(),onClick={onRole(UserRole.STUDENT)}) {
+                Row(Modifier.padding(22.dp),verticalAlignment=Alignment.CenterVertically) {
+                    Icon(Icons.Default.PersonPinCircle,null,tint=blue,modifier=Modifier.size(32.dp)); Spacer(Modifier.width(16.dp))
+                    Column(Modifier.weight(1f)) { Text("Join as a student",style=MaterialTheme.typography.titleLarge); Text("Open your route with a session code",style=MaterialTheme.typography.bodySmall) }
+                    Icon(Icons.Default.ArrowForward,null)
+                }
             }
-            Icon(Icons.Default.ChevronRight, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
+            TextButton(onClick={onRole(UserRole.LECTURER)},modifier=Modifier.align(Alignment.CenterHorizontally)) {
+                Icon(Icons.Default.School,null); Spacer(Modifier.width(10.dp)); Text("Lecturer workspace")
+            }
+            Spacer(Modifier.height(24.dp))
+            Text("Live location · Private evidence · Reliable records",style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

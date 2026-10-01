@@ -75,18 +75,20 @@ fun OsmMap(
     val blueDot = remember(context) {
         GradientDrawable().apply {
             shape = GradientDrawable.OVAL
-            setColor(AndroidColor.parseColor("#2563EB"))
+            setColor(AndroidColor.parseColor("#0A84FF"))
             setStroke((3 * context.resources.displayMetrics.density).toInt(), AndroidColor.WHITE)
             setSize((20 * context.resources.displayMetrics.density).toInt(), (20 * context.resources.displayMetrics.density).toInt())
         }
     }
     val checkpointIcons = remember(checkpoints.map { it.id to it.orderIndex }, context) {
-        checkpoints.associate { it.id to mapPin(context, AndroidColor.parseColor("#0B6E5F"), it.orderIndex.toString()) }
+        checkpoints.associate { it.id to mapPin(context, AndroidColor.parseColor("#0B756F"), it.orderIndex.toString()) }
     }
-    val liveIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#2563EB"), "") }
+    val liveIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#0A84FF"), "") }
     val staleIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#A66600"), "") }
     val map = remember {
         MapView(context).apply {
+            // Compose owns final cleanup; temporary View detaches must not destroy the tile provider.
+            setDestroyMode(false)
             setTileSource(TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
             controller.setZoom(13.5)
@@ -108,6 +110,8 @@ fun OsmMap(
         val tileHandler = Handler(Looper.getMainLooper()) { message ->
             if (currentStyle.value == MapStyle.Satellite && message.what == MapTileProviderBase.MAPTILE_FAIL_ID) {
                 tileError = "Some satellite tiles could not load. Retry or switch to Standard."
+            } else if (message.what == MapTileProviderBase.MAPTILE_SUCCESS_ID) {
+                tileError = null
             }
             false
         }
@@ -139,7 +143,7 @@ fun OsmMap(
     Box(modifier) {
         AndroidView(
             factory = { map },
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().glassSource(LocalGlassState.current),
             update = { mv ->
                 val events = mv.overlays.filterIsInstance<MapEventsOverlay>()
                 mv.overlays.clear()

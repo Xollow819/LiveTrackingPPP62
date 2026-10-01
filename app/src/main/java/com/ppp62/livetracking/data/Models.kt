@@ -6,7 +6,7 @@ import androidx.room.PrimaryKey
 enum class UserRole { STUDENT, LECTURER }
 enum class SessionStatus { DRAFT, ACTIVE, PAUSED, COMPLETED }
 enum class TrackingState { LIVE, STALE, PAUSED, FINISHED }
-enum class SyncState { PENDING, SYNCED, FLAGGED }
+enum class SyncState { PENDING, SYNCED, FLAGGED, FAILED }
 enum class FishCondition { GOOD, STRESSED, MORTALITY }
 
 @Entity(tableName = "sessions")
@@ -42,8 +42,8 @@ data class CheckInEntity(
     val sessionId: String,
     val studentName: String,
     val team: String,
-    val temperatureC: Double,
-    val weightKg: Double,
+    val temperatureC: Double?,
+    val weightKg: Double?,
     val condition: FishCondition,
     val notes: String,
     val photoUri: String?,
@@ -52,12 +52,14 @@ data class CheckInEntity(
     val distanceMeters: Double?,
     val createdAt: Long,
     val syncState: SyncState,
-    val exceptionReason: String? = null
+    val exceptionReason: String? = null,
+    val userId: String = "",
+    val uploadError: String? = null
 )
 
-@Entity(tableName = "locations")
+@Entity(tableName = "locations", primaryKeys = ["sessionId", "participantId"])
 data class LocationEntity(
-    @PrimaryKey val participantId: String,
+    val participantId: String,
     val sessionId: String,
     val participantName: String,
     val team: String,
@@ -70,3 +72,7 @@ data class LocationEntity(
     val trackingState: TrackingState,
     val batteryPercent: Int
 )
+
+@Entity(tableName="position_outbox", primaryKeys=["sessionId","userId"])
+data class PositionOutboxEntity(val sessionId:String,val userId:String,val displayName:String,val team:String,
+    val latitude:Double,val longitude:Double,val accuracy:Double,val recordedAt:Long,val trackingState:String,val eventAt:Long)
