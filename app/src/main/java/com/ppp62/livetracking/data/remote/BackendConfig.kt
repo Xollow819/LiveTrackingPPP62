@@ -4,6 +4,7 @@ import android.content.Context
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.ppp62.livetracking.BuildConfig
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -11,9 +12,12 @@ import kotlinx.coroutines.flow.map
 private val Context.backendDataStore by preferencesDataStore("backend_config")
 
 /**
- * Stores the Supabase project URL + anon key entered by the lecturer.
- * Nothing is hard-coded: the APK ships unconfigured and works fully offline
- * until a backend is entered in Settings.
+ * Supabase project URL + anon key.
+ *
+ * Resolution order: values saved on-device (DataStore) win; otherwise the
+ * keys bundled into the APK at build time (BuildConfig, from the gitignored
+ * local.properties) are used, so the app is online out of the box with no
+ * per-device setup. Nothing is hard-coded in source control.
  */
 class BackendConfig(private val context: Context) {
     companion object {
@@ -27,8 +31,12 @@ class BackendConfig(private val context: Context) {
     val url: Flow<String> = context.backendDataStore.data.map { it[KEY_URL].orEmpty() }
     val anonKey: Flow<String> = context.backendDataStore.data.map { it[KEY_ANON].orEmpty() }
 
+    /** True when the backend was bundled into this APK at build time. */
+    fun isBundled(): Boolean =
+        BuildConfig.SUPABASE_URL.isNotBlank() && BuildConfig.SUPABASE_ANON_KEY.isNotBlank()
+
     suspend fun isConfigured(): Boolean =
-        context.backendDataStore.data.first().let { it[KEY_URL].orEmpty().isNotBlank() && it[KEY_ANON].orEmpty().isNotBlank() }
+        currentUrl().isNotBlank() && currentAnonKey().isNotBlank()
 
     suspend fun save(url: String, anonKey: String) {
         context.backendDataStore.edit {
@@ -37,12 +45,15 @@ class BackendConfig(private val context: Context) {
         }
     }
 
+    /** Clears on-device overrides; bundled build-time keys (if any) still apply. */
     suspend fun clear() {
         context.backendDataStore.edit { it.remove(KEY_URL); it.remove(KEY_ANON) }
     }
 
-    suspend fun currentUrl(): String = context.backendDataStore.data.first()[KEY_URL].orEmpty()
-    suspend fun currentAnonKey(): String = context.backendDataStore.data.first()[KEY_ANON].orEmpty()
+    suspend fun currentUrl(): String =
+        context.backendDataStore.data.first()[KEY_URL].orEmpty().ifBlank { BuildConfig.SUPABASE_URL }
+    suspend fun currentAnonKey(): String =
+        context.backendDataStore.data.first()[KEY_ANON].orEmpty().ifBlank { BuildConfig.SUPABASE_ANON_KEY }
 
     /** Session the device joined online (if any). */
     suspend fun saveOnlineSession(code: String, sessionId: String) {

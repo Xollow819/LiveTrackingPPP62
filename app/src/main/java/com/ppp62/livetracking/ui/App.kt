@@ -18,8 +18,7 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         NavHost(navController = nav, startDestination = "welcome", modifier = Modifier.padding(padding)) {
-            composable("welcome") { WelcomeScreen(onRole = { role -> nav.navigate(if (role == UserRole.STUDENT) "student" else "lecturer") }, onBackendSettings = { nav.navigate("backend") }) }
-            composable("backend") { BackendSettingsScreen(bvm) { nav.popBackStack() } }
+            composable("welcome") { WelcomeScreen(onRole = { role -> nav.navigate(if (role == UserRole.STUDENT) "student" else "lecturer") }) }
             composable("student") { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") }) }
             composable("checkin/{checkpointId}") { entry -> CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty()) { nav.popBackStack() } }
             composable("lecturer") { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onEditor = { nav.navigate("editor") }, onSubmissions = { nav.navigate("submissions") }) }

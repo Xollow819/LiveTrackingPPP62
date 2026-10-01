@@ -95,8 +95,12 @@ class SupabaseBackend(private val config: BackendConfig) {
         val c = client() ?: throw IllegalStateException("Backend not configured")
         ensureSignedIn() ?: throw IllegalStateException("Sign-in failed")
         val row = SessionRow(id = UUID.randomUUID().toString(), code = code.trim().uppercase(), title = title.trim(), lecturerPin = pin.trim())
-        c.from("tracking_sessions").upsert(row) { onConflict = "code" }.decodeSingle<SessionRow>()
-        return findSession(row.code) ?: row
+        // Upsert may return no representation depending on server settings;
+        // fall back to a fresh read instead of crashing on decode.
+        val inserted = runCatching {
+            c.from("tracking_sessions").upsert(row) { onConflict = "code" }.decodeSingle<SessionRow>()
+        }.getOrNull()
+        return inserted ?: findSession(row.code) ?: row
     }
 
     suspend fun joinSession(sessionId: String, userId: String, displayName: String, role: String) {

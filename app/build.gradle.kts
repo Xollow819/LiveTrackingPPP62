@@ -1,3 +1,16 @@
+import java.util.Properties
+
+// Bundled Supabase backend: read from gitignored local.properties so the
+// keys are baked into the APK but never committed to source control.
+// local.properties entries:
+//   SUPABASE_URL=https://xyzcompany.supabase.co
+//   SUPABASE_ANON_KEY=eyJ...
+val supabaseLocalProps = Properties().apply {
+    val f = rootProject.file("local.properties")
+    if (f.exists()) f.inputStream().use(::load)
+}
+fun bundledSupabase(key: String): String = supabaseLocalProps.getProperty(key, "").trim()
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -14,10 +27,12 @@ android {
         applicationId = "com.ppp62.livetracking"
         minSdk = 26
         targetSdk = 36
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 2
+        versionName = "1.0.1"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SYNC_ENDPOINT", "\"${providers.gradleProperty("PPP62_SYNC_ENDPOINT").orElse("").get()}\"")
+        buildConfigField("String", "SUPABASE_URL", "\"${bundledSupabase("SUPABASE_URL")}\"")
+        buildConfigField("String", "SUPABASE_ANON_KEY", "\"${bundledSupabase("SUPABASE_ANON_KEY")}\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
