@@ -16,18 +16,22 @@ import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import com.ppp62.livetracking.service.LocationTrackingService
 import com.ppp62.livetracking.ui.AppViewModel
+import com.ppp62.livetracking.ui.BackendViewModel
 import com.ppp62.livetracking.ui.components.OsmMap
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudentScreen(vm: AppViewModel, onBack: () -> Unit, onCheckIn: (String) -> Unit) {
+fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onCheckIn: (String) -> Unit) {
     val checkpoints by vm.checkpoints.collectAsState()
     val locations by vm.locations.collectAsState()
     val profile by vm.profile
+    val backendEnabled by bvm.backendEnabled
+    val onlineSession by bvm.onlineSession
     val context = LocalContext.current
     var code by rememberSaveable { mutableStateOf("PPP6201") }
     var name by rememberSaveable { mutableStateOf(profile.name) }
     var team by rememberSaveable { mutableStateOf(profile.team) }
+    var joinError by rememberSaveable { mutableStateOf<String?>(null) }
     val ownLocation = locations.firstOrNull { it.participantId == "this-device" }
     // Re-derive from the database so the buttons reflect reality when the screen
     // is re-entered (e.g. tracking paused/finished from the notification).
@@ -44,7 +48,16 @@ fun StudentScreen(vm: AppViewModel, onBack: () -> Unit, onCheckIn: (String) -> U
                     OutlinedTextField(code, { code = it.uppercase() }, label = { Text("Join code") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(name, { name = it }, label = { Text("Student name") }, singleLine = true, modifier = Modifier.fillMaxWidth())
                     OutlinedTextField(team, { team = it }, label = { Text("Team / vehicle") }, singleLine = true, modifier = Modifier.fillMaxWidth())
-                    Button(onClick = { vm.join(code, name, team) {} }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Login, null); Text(" Join active session") }
+                    Button(onClick = {
+                        joinError = null
+                        vm.join(code, name, team) { ok ->
+                            if (ok && backendEnabled) {
+                                bvm.joinOnline(code, name.trim(), "student") { err -> joinError = err }
+                            }
+                        }
+                    }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.Login, null); Text(" Join active session") }
+                    joinError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    if (backendEnabled) Text("Backend configured — joining the online session too.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             } else {
                 item { OsmMap(Modifier.fillMaxWidth().height(310.dp), checkpoints, locations) }
@@ -66,7 +79,15 @@ fun StudentScreen(vm: AppViewModel, onBack: () -> Unit, onCheckIn: (String) -> U
                     ListItem(headlineContent = { Text("${cp.orderIndex}. ${cp.name}") }, supportingContent = { Text(cp.instructions) }, leadingContent = { Icon(Icons.Default.LocationOn, null, tint = MaterialTheme.colorScheme.primary) }, trailingContent = { FilledTonalIconButton(onClick = { onCheckIn(cp.id) }) { Icon(Icons.Default.AddAPhoto, "Check in") } })
                     HorizontalDivider()
                 }
-                item { val own = ownLocation; AssistChip(onClick = {}, label = { Text(if (own == null) "Waiting for GPS" else "GPS ±${own.accuracyMeters.toInt()} m • ${own.trackingState}") }, leadingIcon = { Icon(Icons.Default.GpsFixed, null) }, modifier = Modifier.padding(16.dp)) }
+                item { val own = ownLocation; AssistChip(onClick = {}, label = { Text(if (own == null) "Waiting for GPS" else "GPS ±${own.accuracyMeters.toInt()} m • ${own.trackingState}") }, leadingIcon = { Icon(Icons.Default.GpsFixed, null) }, modifier = Modifier.padding(16.dp, 8.dp)) }
+                item {
+                    AssistChip(
+                        onClick = {},
+                        label = { Text(if (onlineSession != null) "Online ✓ ${onlineSession!!.code}" else if (backendEnabled) "Online session not joined" else "Offline mode — local only") },
+                        leadingIcon = { Icon(if (onlineSession != null) Icons.Default.CloudDone else Icons.Default.CloudOff, null) },
+                        modifier = Modifier.padding(16.dp, 0.dp)
+                    )
+                }
             }
         }
     }

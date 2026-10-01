@@ -10,7 +10,7 @@ import com.ppp62.livetracking.data.UserRole
 import com.ppp62.livetracking.ui.screens.*
 
 @Composable
-fun PPP62App(vm: AppViewModel = viewModel()) {
+fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()) {
     val nav = rememberNavController()
     val snackbar = remember { SnackbarHostState() }
     val message by vm.message
@@ -18,12 +18,13 @@ fun PPP62App(vm: AppViewModel = viewModel()) {
 
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         NavHost(navController = nav, startDestination = "welcome", modifier = Modifier.padding(padding)) {
-            composable("welcome") { WelcomeScreen { role -> nav.navigate(if (role == UserRole.STUDENT) "student" else "lecturer") } }
-            composable("student") { StudentScreen(vm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") }) }
+            composable("welcome") { WelcomeScreen(onRole = { role -> nav.navigate(if (role == UserRole.STUDENT) "student" else "lecturer") }, onBackendSettings = { nav.navigate("backend") }) }
+            composable("backend") { BackendSettingsScreen(bvm) { nav.popBackStack() } }
+            composable("student") { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") }) }
             composable("checkin/{checkpointId}") { entry -> CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty()) { nav.popBackStack() } }
-            composable("lecturer") { LecturerScreen(vm, onBack = { nav.popBackStack() }, onEditor = { nav.navigate("editor") }, onSubmissions = { nav.navigate("submissions") }) }
+            composable("lecturer") { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onEditor = { nav.navigate("editor") }, onSubmissions = { nav.navigate("submissions") }) }
             composable("editor") { CheckpointEditorScreen(vm) { nav.popBackStack() } }
-            composable("submissions") { SubmissionsScreen(vm) { nav.popBackStack() } }
+            composable("submissions") { SubmissionsScreen(vm, bvm) { nav.popBackStack() } }
         }
     }
 }
