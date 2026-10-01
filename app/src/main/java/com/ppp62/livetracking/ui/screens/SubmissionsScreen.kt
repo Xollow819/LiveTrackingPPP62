@@ -20,7 +20,9 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.SyncState
+import com.ppp62.livetracking.data.remote.SubmissionRow
 import com.ppp62.livetracking.ui.AppViewModel
+import com.ppp62.livetracking.ui.BackendViewModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.text.DateFormat
@@ -30,11 +32,44 @@ import kotlin.math.min
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun SubmissionsScreen(vm: AppViewModel, onBack: () -> Unit) {
+fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit) {
     val submissions by vm.checkIns.collectAsState(); val checkpoints by vm.checkpoints.collectAsState()
+    val onlineSession by bvm.onlineSession
+    val onlineSubmissions by bvm.onlineSubmissions.collectAsState()
+    LaunchedEffect(onlineSession) { if (onlineSession != null) bvm.refreshOnlineSubmissions() }
     Scaffold(topBar = { TopAppBar(title = { Text("Check-in review") }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }) }) { pad ->
-        if (submissions.isEmpty()) Box(Modifier.fillMaxSize().padding(pad).padding(32.dp)) { Text("No submissions yet. Student check-ins will appear here.") }
-        else LazyColumn(Modifier.fillMaxSize().padding(pad)) { items(submissions, key = { it.id }) { item ->
+        LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+            if (onlineSession != null) {
+                item {
+                    Row(Modifier.fillMaxWidth().padding(12.dp, 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Text("Online submissions (${onlineSubmissions.size})", fontWeight = FontWeight.Bold)
+                        TextButton(onClick = { bvm.refreshOnlineSubmissions() }) { Icon(Icons.Default.Refresh, null); Text("Refresh") }
+                    }
+                }
+                items(onlineSubmissions, key = { it.id ?: it.createdAt.orEmpty() + it.displayName }) { item ->
+                    ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp)) {
+                        Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text(item.checkpointName.ifBlank { "Checkpoint" }, fontWeight = FontWeight.Bold)
+                                AssistChip(onClick = {}, label = { Text("ONLINE") }, leadingIcon = { Icon(Icons.Default.CloudDone, null) })
+                            }
+                            Text(item.displayName)
+                            val details = listOfNotNull(
+                                item.temperatureC?.let { "$it °C" },
+                                item.weightKg?.let { "$it kg" },
+                                item.condition
+                            ).joinToString(" • ")
+                            if (details.isNotBlank()) Text(details)
+                            item.photoPath?.let { OnlineEvidenceThumbnail(it, bvm) }
+                            if (item.note.isNotBlank()) Text(item.note)
+                            item.createdAt?.let { Text(it, style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        }
+                    }
+                }
+                item { HorizontalDivider(Modifier.padding(vertical = 8.dp)); Text("On this device", fontWeight = FontWeight.Bold, modifier = Modifier.padding(12.dp, 4.dp)) }
+            }
+            if (submissions.isEmpty() && onlineSubmissions.isEmpty()) item { Box(Modifier.fillMaxWidth().padding(32.dp)) { Text("No submissions yet. Student check-ins will appear here.") } }
+            else items(submissions, key = { it.id }) { item ->
             val cp = checkpoints.firstOrNull { it.id == item.checkpointId }?.name ?: item.checkpointId
             ElevatedCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(cp, fontWeight = FontWeight.Bold); AssistChip(onClick = {}, label = { Text(item.syncState.name) }, leadingIcon = { Icon(if (item.syncState == SyncState.FLAGGED) Icons.Default.Warning else Icons.Default.CloudUpload, null) }) }
@@ -44,6 +79,30 @@ fun SubmissionsScreen(vm: AppViewModel, onBack: () -> Unit) {
                 if (item.notes.isNotBlank()) Text(item.notes); Text(DateFormat.getDateTimeInstance().format(Date(item.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             } }
         } }
+    }
+}
+
+/** Downloads a public evidence photo from Supabase Storage and shows a thumbnail. */
+@Composable private fun OnlineEvidenceThumbnail(photoPath: String, bvm: BackendViewModel) {
+    var bitmap by remember(photoPath) { mutableStateOf<Bitmap?>(null) }
+    LaunchedEffect(photoPath) {
+        bitmap = withContext(Dispatchers.IO) {
+            try {
+                val bytes = bvm.downloadEvidence(photoPath) ?: return@withContext null
+                val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+                val sample = max(1, min(bounds.outWidth, bounds.outHeight) / 240)
+                BitmapFactory.decodeByteArray(bytes, 0, bytes.size, BitmapFactory.Options().apply { inSampleSize = sample })
+            } catch (_: Exception) { null }
+        }
+    }
+    bitmap?.let {
+        Image(
+            bitmap = it.asImageBitmap(),
+            contentDescription = "Evidence photo",
+            modifier = Modifier.size(140.dp).clip(RoundedCornerShape(10.dp)),
+            contentScale = ContentScale.Crop
+        )
     }
 }
 

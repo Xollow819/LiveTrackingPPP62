@@ -73,6 +73,7 @@ class LocationTrackingService : Service(), LocationListener {
 
     private var lastAccuracy = Float.MAX_VALUE
     private var lastAcceptedAt = 0L
+    private var lastPublishAt = 0L
 
     override fun onLocationChanged(location: Location) {
         if (paused || location.accuracy > 100f) return
@@ -84,11 +85,22 @@ class LocationTrackingService : Service(), LocationListener {
         lastAcceptedAt = now
         val battery = getSystemService(BatteryManager::class.java).getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
         scope.launch {
-            (application as PPP62Application).database.dao().upsertLocation(
+            val app = application as PPP62Application
+            app.database.dao().upsertLocation(
                 LocationEntity(PPPRepository.DEVICE_PARTICIPANT_ID, PPPRepository.DEMO_SESSION_ID, participantName, team,
                     location.latitude, location.longitude, location.accuracy, location.speed, location.bearing,
                     location.time, TrackingState.LIVE, battery)
             )
+            // Publish to the online backend (throttled); silent no-op when offline/unconfigured.
+            val now = SystemClock.elapsedRealtime()
+            if (now - lastPublishAt >= 15_000) {
+                lastPublishAt = now
+                runCatching {
+                    val session = app.backendConfig.onlineSession() ?: return@runCatching
+                    val uid = app.backend.ensureSignedIn() ?: return@runCatching
+                    app.backend.publishPosition(session.second, uid, participantName, location.latitude, location.longitude, location.accuracy.toDouble())
+                }
+            }
         }
     }
 

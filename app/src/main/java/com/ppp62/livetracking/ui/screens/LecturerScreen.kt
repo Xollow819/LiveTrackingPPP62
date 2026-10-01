@@ -13,20 +13,60 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.*
+import com.ppp62.livetracking.data.remote.LivePositionRow
 import com.ppp62.livetracking.ui.AppViewModel
+import com.ppp62.livetracking.ui.BackendViewModel
 import com.ppp62.livetracking.ui.components.OsmMap
 import com.ppp62.livetracking.util.CsvExporter
 import com.ppp62.livetracking.util.LocationUtils
+import java.time.OffsetDateTime
+
+private fun LivePositionRow.toEntity(sessionId: String): LocationEntity {
+    val recordedAt = try {
+        updatedAt?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() } ?: System.currentTimeMillis()
+    } catch (_: Exception) { System.currentTimeMillis() }
+    return LocationEntity(
+        participantId = userId, sessionId = sessionId, participantName = displayName.ifBlank { "Student" },
+        team = "Online", latitude = lat, longitude = lng, accuracyMeters = (accuracy ?: 0.0).toFloat(),
+        speedMps = 0f, heading = 0f, recordedAt = recordedAt, trackingState = TrackingState.LIVE, batteryPercent = 0
+    )
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LecturerScreen(vm: AppViewModel, onBack: () -> Unit, onEditor: () -> Unit, onSubmissions: () -> Unit) {
+fun LecturerScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onEditor: () -> Unit, onSubmissions: () -> Unit) {
     val checkpoints by vm.checkpoints.collectAsState(); val people by vm.locations.collectAsState(); val submissions by vm.checkIns.collectAsState(); val context = LocalContext.current
-    var teamFilter by rememberSaveable { mutableStateOf("All") }; val teams = listOf("All") + people.map { it.team }.distinct(); val visiblePeople = if (teamFilter == "All") people else people.filter { it.team == teamFilter }
-    Scaffold(topBar = { TopAppBar(title = { Column { Text("Lecturer dashboard", fontWeight = FontWeight.Bold); Text("PPP62-01 • Live monitoring", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }, actions = { IconButton(onClick = { CsvExporter.share(context, submissions) }) { Icon(Icons.Default.FileDownload, "Export CSV") } }) }) { pad ->
+    val backendEnabled by bvm.backendEnabled
+    val onlineSession by bvm.onlineSession
+    val onlinePositions by bvm.positions.collectAsState()
+    var code by rememberSaveable { mutableStateOf("PPP6201") }
+    var pin by rememberSaveable { mutableStateOf("") }
+    var joinError by rememberSaveable { mutableStateOf<String?>(null) }
+
+    // When an online session is active, the lecturer watches live student positions from Supabase.
+    val mapPeople = if (onlineSession != null && onlinePositions.isNotEmpty()) onlinePositions.map { it.toEntity(onlineSession!!.id) } else people
+    var teamFilter by rememberSaveable { mutableStateOf("All") }; val teams = listOf("All") + mapPeople.map { it.team }.distinct(); val visiblePeople = if (teamFilter == "All") mapPeople else mapPeople.filter { it.team == teamFilter }
+    Scaffold(topBar = { TopAppBar(title = { Column { Text("Lecturer dashboard", fontWeight = FontWeight.Bold); Text(if (onlineSession != null) "Online • ${onlineSession!!.code}" else "PPP62-01 • Live monitoring", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }, actions = { IconButton(onClick = { CsvExporter.share(context, submissions) }) { Icon(Icons.Default.FileDownload, "Export CSV") } }) }) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad)) {
+            if (backendEnabled && onlineSession == null) item {
+                Card(Modifier.fillMaxWidth().padding(12.dp)) {
+                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        Text("Online session", fontWeight = FontWeight.Bold)
+                        Text("Create or join the shared session to watch students live on this map.", style = MaterialTheme.typography.bodySmall)
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            OutlinedTextField(code, { code = it.uppercase() }, label = { Text("Code") }, singleLine = true, modifier = Modifier.weight(1f))
+                            OutlinedTextField(pin, { pin = it }, label = { Text("Lecturer PIN") }, singleLine = true, modifier = Modifier.weight(1f))
+                        }
+                        Button(onClick = {
+                            joinError = null
+                            bvm.joinOnline(code, "Lecturer", "lecturer", pin) { err -> joinError = err }
+                        }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CloudDone, null); Text(" Start / join online session") }
+                        joinError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+            }
             item { OsmMap(Modifier.fillMaxWidth().height(310.dp), checkpoints, visiblePeople) }
-            item { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("${people.count { !LocationUtils.isStale(it.recordedAt) && it.trackingState == TrackingState.LIVE }}", "Live", Modifier.weight(1f)); Summary("${submissions.size}/${checkpoints.size}", "Check-ins", Modifier.weight(1f)); Summary("${submissions.count { it.syncState == SyncState.FLAGGED }}", "Flagged", Modifier.weight(1f)) } }
+            item { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("${visiblePeople.count { !LocationUtils.isStale(it.recordedAt) && it.trackingState == TrackingState.LIVE }}", "Live", Modifier.weight(1f)); Summary("${submissions.size}/${checkpoints.size}", "Check-ins", Modifier.weight(1f)); Summary("${submissions.count { it.syncState == SyncState.FLAGGED }}", "Flagged", Modifier.weight(1f)) } }
             item { Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilledTonalButton(onClick = onEditor, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AddLocationAlt, null); Text(" Checkpoints") }; FilledTonalButton(onClick = onSubmissions, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AssignmentTurnedIn, null); Text(" Submissions") } } }
             item { Text("Team filter", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(16.dp, 14.dp, 16.dp, 4.dp)); Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { teams.take(4).forEach { FilterChip(teamFilter == it, { teamFilter = it }, { Text(it) }) } } }
             item { Text("Participants", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }

@@ -12,7 +12,7 @@ import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.UserRole
 
 @Composable
-fun WelcomeScreen(onRole: (UserRole) -> Unit) {
+fun WelcomeScreen(onRole: (UserRole) -> Unit, onBackendSettings: () -> Unit) {
     Column(Modifier.fillMaxSize().padding(24.dp), verticalArrangement = Arrangement.Center) {
         Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) { Icon(Icons.Default.Route, null, Modifier.padding(18.dp).size(48.dp), tint = MaterialTheme.colorScheme.primary) }
         Spacer(Modifier.height(24.dp))
@@ -23,6 +23,10 @@ fun WelcomeScreen(onRole: (UserRole) -> Unit) {
         Spacer(Modifier.height(12.dp))
         RoleCard("Lecturer", "Monitor teams, review exceptions, manage checkpoints, and export reports.", Icons.Default.Dashboard) { onRole(UserRole.LECTURER) }
         Spacer(Modifier.height(24.dp))
+        OutlinedButton(onClick = onBackendSettings, modifier = Modifier.fillMaxWidth()) {
+            Icon(Icons.Default.CloudQueue, null); Spacer(Modifier.width(8.dp)); Text("Online backend settings")
+        }
+        Spacer(Modifier.height(12.dp))
         Text("OpenStreetMap • Local-first • No paid API key", modifier = Modifier.align(Alignment.CenterHorizontally), style = MaterialTheme.typography.labelMedium)
     }
 }

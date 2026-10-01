@@ -5,6 +5,7 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.ppp62.livetracking.PPP62Application
 import com.ppp62.livetracking.data.*
+import com.ppp62.livetracking.data.remote.SubmissionRow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -33,7 +34,26 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun submit(checkpoint: CheckpointEntity, temperature: Double, weight: Double, condition: FishCondition, notes: String, photoUri: String?, latitude: Double?, longitude: Double?, onDone: () -> Unit) = viewModelScope.launch {
         repository.submitCheckIn(checkpoint, profile.value.name, profile.value.team, temperature, weight, condition, notes, photoUri, latitude, longitude)
-        message.value = "Check-in saved locally"
+        // Best-effort online upload: photo to Storage + row to Supabase. Local Room stays the truth.
+        val uploaded = runCatching {
+            val app = getApplication<PPP62Application>()
+            val session = app.backendConfig.onlineSession() ?: return@runCatching false
+            val uid = app.backend.ensureSignedIn() ?: return@runCatching false
+            val bytes = photoUri?.let { uri ->
+                app.contentResolver.openInputStream(android.net.Uri.parse(uri))?.use { it.readBytes() }
+            }
+            val path = bytes?.let { app.backend.uploadEvidence(session.second, it) }
+            app.backend.submitEvidence(
+                SubmissionRow(
+                    sessionId = session.second, userId = uid, displayName = profile.value.name,
+                    checkpointName = checkpoint.name, note = notes, photoPath = path,
+                    lat = latitude, lng = longitude,
+                    temperatureC = temperature, weightKg = weight, condition = condition.name
+                )
+            )
+            true
+        }.getOrDefault(false)
+        message.value = if (uploaded) "Check-in saved + uploaded ✓" else "Check-in saved locally"
         onDone()
     }
 
