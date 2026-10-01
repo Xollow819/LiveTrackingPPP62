@@ -21,6 +21,7 @@ import com.ppp62.livetracking.data.remote.LivePositionRow
 import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.ui.BackendViewModel
 import com.ppp62.livetracking.ui.components.OsmMap
+import com.ppp62.livetracking.ui.components.MapControlButton
 import com.ppp62.livetracking.ui.toEntity
 import com.ppp62.livetracking.util.CsvExporter
 import com.ppp62.livetracking.util.DeviceLocation
@@ -100,7 +101,7 @@ private fun LecturerMonitorScreen(vm: AppViewModel, bvm: BackendViewModel, onBac
             item {
                 Box(Modifier.fillMaxWidth().height(320.dp)) {
                     OsmMap(Modifier.fillMaxSize(), checkpoints, people, myLocation = myLoc, target = myLoc)
-                    FilledTonalIconButton(onClick = {
+                    MapControlButton(Icons.Default.MyLocation, "Find my location", onClick = {
                         if (!DeviceLocation.hasPermission(context)) locationPermissions.launch(arrayOf(android.Manifest.permission.ACCESS_FINE_LOCATION, android.Manifest.permission.ACCESS_COARSE_LOCATION))
                         else scope.launch {
                             locating = true; gpsMessage = null
@@ -108,9 +109,7 @@ private fun LecturerMonitorScreen(vm: AppViewModel, bvm: BackendViewModel, onBac
                             locating = false
                             if (myLoc == null) gpsMessage = if (DeviceLocation.locationEnabled(context)) "No GPS fix yet. Move outdoors and retry." else "Turn on device location, then retry."
                         }
-                    }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp)) {
-                        if (locating) CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp) else Icon(Icons.Default.MyLocation, "Find my location")
-                    }
+                    }, modifier = Modifier.align(Alignment.TopEnd).padding(12.dp), busy = locating)
                     gpsMessage?.let { message ->
                         Surface(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .96f), shape = RoundedCornerShape(16.dp), tonalElevation = 4.dp) {
                             Row(Modifier.padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp), verticalAlignment = Alignment.CenterVertically) {

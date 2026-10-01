@@ -44,9 +44,19 @@ Command-line verification:
 ./gradlew testDebugUnitTest lintDebug assembleDebug
 ```
 
-## Free map service
+## Map types
 
 The app uses OpenStreetMap raster tiles through osmdroid, so it has no Google Maps key or billing dependency. The public OSM tile service is appropriate for development and small pilots only. Follow the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and use a dedicated provider or self-hosted tiles for a high-volume deployment.
+
+The layers button on each map switches between **Standard** and **Satellite**, and remembers your choice. Satellite imagery uses MapTiler; Standard remains available without a provider key.
+
+To enable satellite imagery, add a MapTiler client API key to gitignored `local.properties`, then rebuild:
+
+```properties
+MAPTILER_API_KEY=your_maptiler_client_key
+```
+
+The app reads zoom limits and attribution from MapTiler's satellite TileJSON. Satellite loading failures offer Retry and Standard actions. See the [MapTiler Tiles API](https://docs.maptiler.com/cloud/api/tiles/) for provider configuration and account requirements.
 
 ## Cloud synchronization boundary
 

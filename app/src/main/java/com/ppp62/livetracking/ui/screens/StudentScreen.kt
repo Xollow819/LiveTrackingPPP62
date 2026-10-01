@@ -169,7 +169,8 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                         Modifier.fillMaxWidth().height(300.dp),
                         sessionCheckpoints,
                         listOfNotNull(own),
-                        myLocation = ownPoint ?: devicePoint
+                        myLocation = ownPoint ?: devicePoint,
+                        layersTopPadding = 12.dp
                     )
                     }
                 }

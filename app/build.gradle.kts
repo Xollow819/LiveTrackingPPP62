@@ -33,6 +33,7 @@ android {
         buildConfigField("String", "SYNC_ENDPOINT", "\"${providers.gradleProperty("PPP62_SYNC_ENDPOINT").orElse("").get()}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${bundledSupabase("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${bundledSupabase("SUPABASE_ANON_KEY")}\"")
+        buildConfigField("String", "MAPTILER_API_KEY", "\"${bundledSupabase("MAPTILER_API_KEY").replace("\\", "\\\\").replace("\"", "\\\"")}\"")
     }
     buildFeatures { compose = true; buildConfig = true }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }

@@ -9,6 +9,8 @@ import android.provider.Settings.ACTION_LOCATION_SOURCE_SETTINGS
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
@@ -26,6 +28,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -38,6 +42,8 @@ import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.ui.BackendViewModel
 import com.ppp62.livetracking.ui.DraftCheckpoint
 import com.ppp62.livetracking.ui.components.OsmMap
+import com.ppp62.livetracking.ui.components.MapControlButton
+import com.ppp62.livetracking.ui.components.CheckpointMapHint
 import com.ppp62.livetracking.util.DeviceLocation
 import com.ppp62.livetracking.util.PlaceResult
 import com.ppp62.livetracking.util.PlaceSearch
@@ -157,6 +163,7 @@ private fun MapStep(
     }
 
     fun locate() {
+        if (locating) return
         if (!DeviceLocation.hasPermission(context)) {
             locationLauncher.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
             return
@@ -188,20 +195,29 @@ private fun MapStep(
     }
 
     val entities = drafts.mapIndexed { i, d -> d.toEntity(i) }
+    val density = LocalDensity.current
+    var searchPanelHeight by remember { mutableIntStateOf(0) }
+    var checkpointPanelHeight by remember { mutableIntStateOf(0) }
+    val gpsTop = if (searchOpen) with(density) { searchPanelHeight.toDp() } + 8.dp else 72.dp
 
-    Box(Modifier.fillMaxSize()) {
+    BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
+        val showCheckpointPanel = !searchOpen || maxHeight >= 440.dp
+        val panelSpace = if (showCheckpointPanel) with(density) { checkpointPanelHeight.toDp() } else 0.dp
+        val maxResultsHeight = (maxHeight - panelSpace - 228.dp).coerceAtLeast(48.dp)
         OsmMap(
             modifier = Modifier.fillMaxSize(),
             checkpoints = entities,
             myLocation = myLoc,
             target = target,
-            onMapTap = { pendingPin = it }
+            onMapTap = { pendingPin = it },
+            layersTopPadding = gpsTop + 60.dp,
+            attributionBottomPadding = panelSpace
         )
 
         // Search toggle + bar
-        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(12.dp)) {
+        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { searchPanelHeight = it.height }.padding(12.dp)) {
             if (!searchOpen) {
-                FilledTonalIconButton(onClick = { searchOpen = true }, modifier = Modifier.align(Alignment.End)) { Icon(Icons.Default.Search, "Search places") }
+                MapControlButton(Icons.Default.Search, "Search places", { searchOpen = true }, Modifier.align(Alignment.End))
             } else {
                 ElevatedCard {
                     Column(Modifier.padding(8.dp)) {
@@ -217,32 +233,29 @@ private fun MapStep(
                         }
                         if (searching) LinearProgressIndicator(Modifier.fillMaxWidth().padding(top = 4.dp))
                         searchError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(4.dp)) }
-                        results.forEach { r ->
-                            ListItem(
-                                headlineContent = { Text(r.name, maxLines = 1) },
-                                supportingContent = { Text(r.detail, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
-                                leadingContent = { Icon(Icons.Default.Place, null, tint = MaterialTheme.colorScheme.primary) },
-                                modifier = Modifier.fillMaxWidth().clickable {
-                                    target = GeoPoint(r.lat, r.lon)
-                                    results = emptyList(); searchOpen = false; query = ""
-                                }
-                            )
-                            HorizontalDivider()
+                        Column(Modifier.heightIn(max = maxResultsHeight).verticalScroll(rememberScrollState())) {
+                            results.forEach { r ->
+                                ListItem(
+                                    headlineContent = { Text(r.name, maxLines = 1) },
+                                    supportingContent = { Text(r.detail, maxLines = 1, style = MaterialTheme.typography.bodySmall) },
+                                    leadingContent = { Icon(Icons.Default.Place, null, tint = MaterialTheme.colorScheme.primary) },
+                                    modifier = Modifier.fillMaxWidth().clickable {
+                                        target = GeoPoint(r.lat, r.lon)
+                                        results = emptyList(); searchOpen = false; query = ""
+                                    }
+                                )
+                                HorizontalDivider()
+                            }
                         }
                     }
                 }
             }
         }
 
-        // Recenter on device location
-        FloatingActionButton(
-            onClick = { locate() },
-            modifier = Modifier.align(Alignment.CenterEnd).padding(12.dp),
-            containerColor = MaterialTheme.colorScheme.surface
-        ) {
-            if (locating) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
-            else Icon(Icons.Default.MyLocation, "Find my location", tint = MaterialTheme.colorScheme.primary)
-        }
+        MapControlButton(
+            Icons.Default.MyLocation, "Find my location", { locate() },
+            Modifier.align(Alignment.TopEnd).padding(top = gpsTop, end = 12.dp), busy = locating
+        )
 
         if (locationMessage != null || permissionDenied) {
             ElevatedCard(Modifier.align(Alignment.CenterEnd).padding(end = 64.dp, top = 12.dp)) {
@@ -257,40 +270,40 @@ private fun MapStep(
             }
         }
 
-        // Tap hint
-        if (drafts.isEmpty() && pendingPin == null) {
-            ElevatedCard(Modifier.align(Alignment.TopCenter).padding(top = 68.dp)) {
-                Text("Tap anywhere on the map to pin a checkpoint", modifier = Modifier.padding(12.dp, 8.dp), style = MaterialTheme.typography.bodyMedium)
-            }
-        }
+        CheckpointMapHint(
+            Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 12.dp, end = 72.dp),
+            visible = !searchOpen && pendingPin == null
+        )
 
-        // Draft list + continue
-        ElevatedCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(12.dp)) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (drafts.isNotEmpty()) {
-                    LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        itemsIndexed(drafts) { i, d ->
-                            InputChip(
-                                selected = false,
-                                onClick = { target = GeoPoint(d.lat, d.lng) },
-                                label = { Text("${i + 1}. ${d.name}") },
-                                trailingIcon = { IconButton(onClick = { drafts.removeAt(i) }, modifier = Modifier.size(20.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(14.dp)) } }
-                            )
+        // Keep search controls accessible when the keyboard leaves little map space.
+        if (showCheckpointPanel) {
+            ElevatedCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { checkpointPanelHeight = it.height }.padding(12.dp)) {
+                Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (drafts.isNotEmpty()) {
+                        LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            itemsIndexed(drafts) { i, d ->
+                                InputChip(
+                                    selected = false,
+                                    onClick = { target = GeoPoint(d.lat, d.lng) },
+                                    label = { Text("${i + 1}. ${d.name}") },
+                                    trailingIcon = { IconButton(onClick = { drafts.removeAt(i) }, modifier = Modifier.size(20.dp)) { Icon(Icons.Default.Close, null, modifier = Modifier.size(14.dp)) } }
+                                )
+                            }
                         }
+                    } else {
+                        Text("No checkpoints yet", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
-                } else {
-                    Text("No checkpoints yet", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                }
-                mapError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Back") }
-                    Button(
-                        onClick = {
-                            if (drafts.isEmpty()) mapError = "Pin at least one checkpoint on the map"
-                            else onContinue()
-                        },
-                        modifier = Modifier.weight(2f)
-                    ) { Text("Continue"); Icon(Icons.Default.ArrowForward, null) }
+                    mapError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onBack, modifier = Modifier.weight(1f)) { Text("Back") }
+                        Button(
+                            onClick = {
+                                if (drafts.isEmpty()) mapError = "Pin at least one checkpoint on the map"
+                                else onContinue()
+                            },
+                            modifier = Modifier.weight(2f)
+                        ) { Text("Continue"); Icon(Icons.Default.ArrowForward, null) }
+                    }
                 }
             }
         }

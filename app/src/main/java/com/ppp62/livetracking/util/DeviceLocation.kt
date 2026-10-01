@@ -7,6 +7,7 @@ import android.location.LocationManager
 import android.location.LocationListener
 import android.os.Looper
 import androidx.core.content.ContextCompat
+import androidx.core.location.LocationManagerCompat
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.withTimeoutOrNull
 import org.osmdroid.util.GeoPoint
@@ -25,7 +26,7 @@ object DeviceLocation {
         val providers = runCatching { manager.getProviders(true) }.getOrDefault(emptyList())
         if (providers.isEmpty()) return lastKnown(context)
         val fresh = withTimeoutOrNull(timeoutMillis) {
-            suspendCancellableCoroutine { continuation ->
+            suspendCancellableCoroutine<GeoPoint?> { continuation ->
                 val listener = object : LocationListener {
                     override fun onLocationChanged(location: android.location.Location) {
                         if (continuation.isActive) continuation.resume(GeoPoint(location.latitude, location.longitude))
@@ -33,9 +34,18 @@ object DeviceLocation {
                     }
                 }
                 continuation.invokeOnCancellation { runCatching { manager.removeUpdates(listener) } }
+                var registered = false
                 providers.forEach { provider ->
-                    runCatching { manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper()) }
+                    try {
+                        manager.requestLocationUpdates(provider, 0L, 0f, listener, Looper.getMainLooper())
+                        registered = true
+                    } catch (_: SecurityException) {
+                        // Permission can be revoked after the initial check.
+                    } catch (_: IllegalArgumentException) {
+                        // A provider can become unavailable during the request.
+                    }
                 }
+                if (!registered && continuation.isActive) continuation.resume(null)
             }
         }
         return fresh ?: lastKnown(context)
@@ -48,7 +58,7 @@ object DeviceLocation {
     }
 
     fun locationEnabled(context: Context): Boolean = runCatching {
-        (context.getSystemService(Context.LOCATION_SERVICE) as LocationManager).isLocationEnabled
+        LocationManagerCompat.isLocationEnabled(context.getSystemService(Context.LOCATION_SERVICE) as LocationManager)
     }.getOrDefault(false)
 
     fun lastKnown(context: Context): GeoPoint? {
@@ -62,7 +72,9 @@ object DeviceLocation {
                 LocationManager.PASSIVE_PROVIDER
             ).filter { enabled.contains(it) } + enabled
             val fix = ordered.distinct().firstNotNullOfOrNull { provider ->
-                runCatching { lm.getLastKnownLocation(provider) }.getOrNull()
+                try { lm.getLastKnownLocation(provider) }
+                catch (_: SecurityException) { null }
+                catch (_: IllegalArgumentException) { null }
             }
             fix?.let { GeoPoint(it.latitude, it.longitude) }
         }.getOrNull()
