@@ -1,0 +1,31 @@
+package com.ppp62.livetracking
+
+import android.app.Application
+import androidx.room.Room
+import androidx.work.Configuration
+import com.ppp62.livetracking.data.AppDatabase
+import com.ppp62.livetracking.data.PPPRepository
+import org.osmdroid.config.Configuration as OsmConfiguration
+
+class PPP62Application : Application(), Configuration.Provider {
+    lateinit var database: AppDatabase
+        private set
+    lateinit var repository: PPPRepository
+        private set
+
+    override fun onCreate() {
+        super.onCreate()
+        OsmConfiguration.getInstance().apply {
+            userAgentValue = packageName
+            load(this@PPP62Application, getSharedPreferences("osmdroid", MODE_PRIVATE))
+        }
+        database = Room.databaseBuilder(this, AppDatabase::class.java, "ppp62.db")
+            .fallbackToDestructiveMigration()
+            .build()
+        repository = PPPRepository(database.dao())
+        repository.scheduleSeed()
+    }
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder().setMinimumLoggingLevel(android.util.Log.INFO).build()
+}
