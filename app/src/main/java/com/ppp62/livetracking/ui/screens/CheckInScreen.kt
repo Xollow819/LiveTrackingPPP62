@@ -26,7 +26,8 @@ import java.io.File
 @Composable
 fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
     val checkpoints by vm.checkpoints.collectAsState(); val locations by vm.locations.collectAsState()
-    val checkpoint = checkpoints.firstOrNull { it.id == checkpointId }
+    val checkpoint = vm.sessionCheckpoints.value.firstOrNull { it.id == checkpointId }
+        ?: checkpoints.firstOrNull { it.id == checkpointId }
     val context = LocalContext.current
     var temperature by rememberSaveable { mutableStateOf("") }; var weight by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }; var condition by rememberSaveable { mutableStateOf(FishCondition.GOOD) }

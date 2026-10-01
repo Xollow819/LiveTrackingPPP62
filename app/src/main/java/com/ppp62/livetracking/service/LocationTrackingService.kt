@@ -87,7 +87,7 @@ class LocationTrackingService : Service(), LocationListener {
         scope.launch {
             val app = application as PPP62Application
             app.database.dao().upsertLocation(
-                LocationEntity(PPPRepository.DEVICE_PARTICIPANT_ID, PPPRepository.DEMO_SESSION_ID, participantName, team,
+                LocationEntity(PPPRepository.DEVICE_PARTICIPANT_ID, PPPRepository.LOCAL_SESSION_ID, participantName, team,
                     location.latitude, location.longitude, location.accuracy, location.speed, location.bearing,
                     location.time, TrackingState.LIVE, battery)
             )

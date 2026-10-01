@@ -21,8 +21,7 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
             composable("welcome") { WelcomeScreen(onRole = { role -> nav.navigate(if (role == UserRole.STUDENT) "student" else "lecturer") }) }
             composable("student") { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") }) }
             composable("checkin/{checkpointId}") { entry -> CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty()) { nav.popBackStack() } }
-            composable("lecturer") { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onEditor = { nav.navigate("editor") }, onSubmissions = { nav.navigate("submissions") }) }
-            composable("editor") { CheckpointEditorScreen(vm) { nav.popBackStack() } }
+            composable("lecturer") { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onSubmissions = { nav.navigate("submissions") }) }
             composable("submissions") { SubmissionsScreen(vm, bvm) { nav.popBackStack() } }
         }
     }

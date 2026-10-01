@@ -26,6 +26,8 @@ class BackendConfig(private val context: Context) {
         private val KEY_SESSION_CODE = stringPreferencesKey("online_session_code")
         private val KEY_SESSION_ID = stringPreferencesKey("online_session_id")
         private val KEY_DISPLAY_NAME = stringPreferencesKey("display_name")
+        private val KEY_ROLE = stringPreferencesKey("role")
+        private val KEY_TEAM = stringPreferencesKey("team")
     }
 
     val url: Flow<String> = context.backendDataStore.data.map { it[KEY_URL].orEmpty() }
@@ -72,4 +74,10 @@ class BackendConfig(private val context: Context) {
 
     suspend fun saveDisplayName(name: String) { context.backendDataStore.edit { it[KEY_DISPLAY_NAME] = name } }
     suspend fun displayName(): String = context.backendDataStore.data.first()[KEY_DISPLAY_NAME].orEmpty()
+
+    suspend fun saveRole(role: String) { context.backendDataStore.edit { it[KEY_ROLE] = role } }
+    suspend fun role(): String = context.backendDataStore.data.first()[KEY_ROLE].orEmpty().ifBlank { "student" }
+
+    suspend fun saveTeam(team: String) { context.backendDataStore.edit { it[KEY_TEAM] = team } }
+    suspend fun team(): String = context.backendDataStore.data.first()[KEY_TEAM].orEmpty()
 }

@@ -7,7 +7,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
-import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -17,64 +16,122 @@ import com.ppp62.livetracking.data.remote.LivePositionRow
 import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.ui.BackendViewModel
 import com.ppp62.livetracking.ui.components.OsmMap
+import com.ppp62.livetracking.ui.toEntity
 import com.ppp62.livetracking.util.CsvExporter
+import com.ppp62.livetracking.util.DeviceLocation
 import com.ppp62.livetracking.util.LocationUtils
-import java.time.OffsetDateTime
+import org.osmdroid.util.GeoPoint
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 
 private fun LivePositionRow.toEntity(sessionId: String): LocationEntity {
     val recordedAt = try {
-        updatedAt?.let { OffsetDateTime.parse(it).toInstant().toEpochMilli() } ?: System.currentTimeMillis()
+        updatedAt?.let { java.time.OffsetDateTime.parse(it).toInstant().toEpochMilli() } ?: System.currentTimeMillis()
     } catch (_: Exception) { System.currentTimeMillis() }
     return LocationEntity(
         participantId = userId, sessionId = sessionId, participantName = displayName.ifBlank { "Student" },
-        team = "Online", latitude = lat, longitude = lng, accuracyMeters = (accuracy ?: 0.0).toFloat(),
+        team = "Field", latitude = lat, longitude = lng, accuracyMeters = (accuracy ?: 0.0).toFloat(),
         speedMps = 0f, heading = 0f, recordedAt = recordedAt, trackingState = TrackingState.LIVE, batteryPercent = 0
     )
 }
 
+/**
+ * Lecturer entry: runs the setup wizard until a session exists, then shows
+ * the live monitoring dashboard.
+ */
+@Composable
+fun LecturerScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onSubmissions: () -> Unit) {
+    val onlineSession by bvm.onlineSession
+    if (onlineSession == null) {
+        LecturerSetupScreen(vm, bvm, onBack)
+    } else {
+        LecturerMonitorScreen(vm, bvm, onBack, onSubmissions)
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LecturerScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onEditor: () -> Unit, onSubmissions: () -> Unit) {
-    val checkpoints by vm.checkpoints.collectAsState(); val people by vm.locations.collectAsState(); val submissions by vm.checkIns.collectAsState(); val context = LocalContext.current
-    val backendEnabled by bvm.backendEnabled
+private fun LecturerMonitorScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onSubmissions: () -> Unit) {
+    val context = LocalContext.current
     val onlineSession by bvm.onlineSession
     val onlinePositions by bvm.positions.collectAsState()
-    var code by rememberSaveable { mutableStateOf("PPP6201") }
-    var pin by rememberSaveable { mutableStateOf("") }
-    var joinError by rememberSaveable { mutableStateOf<String?>(null) }
+    val onlineCheckpoints by bvm.onlineCheckpoints.collectAsState()
+    val alerts by bvm.alerts.collectAsState()
+    val onlineSubmissions by bvm.onlineSubmissions.collectAsState()
+    val session = onlineSession ?: return
 
-    // When an online session is active, the lecturer watches live student positions from Supabase.
-    val mapPeople = if (onlineSession != null && onlinePositions.isNotEmpty()) onlinePositions.map { it.toEntity(onlineSession!!.id) } else people
-    var teamFilter by rememberSaveable { mutableStateOf("All") }; val teams = listOf("All") + mapPeople.map { it.team }.distinct(); val visiblePeople = if (teamFilter == "All") mapPeople else mapPeople.filter { it.team == teamFilter }
-    Scaffold(topBar = { TopAppBar(title = { Column { Text("Lecturer dashboard", fontWeight = FontWeight.Bold); Text(if (onlineSession != null) "Online • ${onlineSession!!.code}" else "PPP62-01 • Live monitoring", style = MaterialTheme.typography.labelSmall) } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } }, actions = { IconButton(onClick = { CsvExporter.share(context, submissions) }) { Icon(Icons.Default.FileDownload, "Export CSV") } }) }) { pad ->
+    LaunchedEffect(session.id) { bvm.refreshOnlineSubmissions() }
+
+    var myLoc by remember { mutableStateOf<GeoPoint?>(null) }
+    LaunchedEffect(Unit) { myLoc = DeviceLocation.lastKnown(context) }
+
+    val checkpoints = remember(onlineCheckpoints) { onlineCheckpoints.mapIndexed { i, r -> r.toEntity(i) } }
+    val people = remember(onlinePositions) { onlinePositions.map { it.toEntity(session.id) } }
+    val liveCount = people.count { !LocationUtils.isStale(it.recordedAt) }
+
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Column { Text("Monitoring", fontWeight = FontWeight.Bold); Text("Code ${session.code} • ${session.title}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
+                navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, null) } },
+                actions = {
+                    IconButton(onClick = { bvm.refreshOnlineSubmissions() }) { Icon(Icons.Default.Refresh, "Refresh") }
+                    IconButton(onClick = { bvm.leaveSession() }) { Icon(Icons.Default.Logout, "Leave session") }
+                }
+            )
+        }
+    ) { pad ->
         LazyColumn(Modifier.fillMaxSize().padding(pad)) {
-            if (backendEnabled && onlineSession == null) item {
-                Card(Modifier.fillMaxWidth().padding(12.dp)) {
-                    Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Text("Online session", fontWeight = FontWeight.Bold)
-                        Text("Create or join the shared session to watch students live on this map.", style = MaterialTheme.typography.bodySmall)
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            OutlinedTextField(code, { code = it.uppercase() }, label = { Text("Code") }, singleLine = true, modifier = Modifier.weight(1f))
-                            OutlinedTextField(pin, { pin = it }, label = { Text("Lecturer PIN") }, singleLine = true, modifier = Modifier.weight(1f))
-                        }
-                        Button(onClick = {
-                            joinError = null
-                            bvm.joinOnline(code, "Lecturer", "lecturer", pin) { err -> joinError = err }
-                        }, modifier = Modifier.fillMaxWidth()) { Icon(Icons.Default.CloudDone, null); Text(" Start / join online session") }
-                        joinError?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
-                    }
+            item { OsmMap(Modifier.fillMaxWidth().height(320.dp), checkpoints, people, myLocation = myLoc) }
+            item {
+                Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    SummaryCard("$liveCount", "Live now", Modifier.weight(1f))
+                    SummaryCard("${people.size}", "Students", Modifier.weight(1f))
+                    SummaryCard("${onlineSubmissions.size}", "Check-ins", Modifier.weight(1f))
                 }
             }
-            item { OsmMap(Modifier.fillMaxWidth().height(310.dp), checkpoints, visiblePeople) }
-            item { Row(Modifier.fillMaxWidth().padding(12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { Summary("${visiblePeople.count { !LocationUtils.isStale(it.recordedAt) && it.trackingState == TrackingState.LIVE }}", "Live", Modifier.weight(1f)); Summary("${submissions.size}/${checkpoints.size}", "Check-ins", Modifier.weight(1f)); Summary("${submissions.count { it.syncState == SyncState.FLAGGED }}", "Flagged", Modifier.weight(1f)) } }
-            item { Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilledTonalButton(onClick = onEditor, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AddLocationAlt, null); Text(" Checkpoints") }; FilledTonalButton(onClick = onSubmissions, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AssignmentTurnedIn, null); Text(" Submissions") } } }
-            item { Text("Team filter", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(16.dp, 14.dp, 16.dp, 4.dp)); Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { teams.take(4).forEach { FilterChip(teamFilter == it, { teamFilter = it }, { Text(it) }) } } }
-            item { Text("Participants", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-            items(visiblePeople, key = { it.participantId }) { participant ->
-                val stale = LocationUtils.isStale(participant.recordedAt); val label = when { participant.trackingState != TrackingState.LIVE -> participant.trackingState.name; stale -> "STALE"; else -> "LIVE" }
-                ListItem(headlineContent = { Text(participant.participantName) }, supportingContent = { Text("${participant.team} • ±${participant.accuracyMeters.toInt()} m • Battery ${participant.batteryPercent}%") }, leadingContent = { Icon(if (label == "LIVE") Icons.Default.RadioButtonChecked else Icons.Default.Warning, null, tint = if (label == "LIVE") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary) }, trailingContent = { Text(label, style = MaterialTheme.typography.labelMedium) }); HorizontalDivider()
+            item {
+                FilledTonalButton(onClick = onSubmissions, modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp)) {
+                    Icon(Icons.Default.AssignmentTurnedIn, null); Text(" Review submissions")
+                }
             }
+            if (alerts.isNotEmpty()) {
+                item { Text("Arrivals & departures", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp)) }
+                items(alerts.take(10), key = { it.id }) { alert ->
+                    ListItem(
+                        headlineContent = { Text(alert.text, style = MaterialTheme.typography.bodyMedium) },
+                        supportingContent = { Text(SimpleDateFormat("HH:mm:ss", Locale.getDefault()).format(Date(alert.at)), style = MaterialTheme.typography.labelSmall) },
+                        leadingContent = { Icon(if (alert.text.contains("arrived")) Icons.Default.Login else Icons.Default.Logout, null, tint = MaterialTheme.colorScheme.primary) }
+                    )
+                    HorizontalDivider()
+                }
+            }
+            item { Text("Students on the map", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp, 16.dp, 16.dp, 4.dp)) }
+            if (people.isEmpty()) {
+                item { Text("No students sharing location yet — they appear here once they join with code ${session.code} and start tracking.", modifier = Modifier.padding(16.dp, 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            }
+            items(people, key = { it.participantId }) { p ->
+                val stale = LocationUtils.isStale(p.recordedAt)
+                ListItem(
+                    headlineContent = { Text(p.participantName) },
+                    supportingContent = { Text("±${p.accuracyMeters.toInt()} m accuracy") },
+                    leadingContent = { Icon(Icons.Default.PersonPinCircle, null, tint = if (stale) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary) },
+                    trailingContent = { Text(if (stale) "STALE" else "LIVE", style = MaterialTheme.typography.labelMedium, color = if (stale) MaterialTheme.colorScheme.tertiary else MaterialTheme.colorScheme.primary) }
+                )
+                HorizontalDivider()
+            }
+            item { Spacer(Modifier.height(16.dp)) }
         }
     }
 }
-@Composable private fun Summary(value: String, label: String, modifier: Modifier = Modifier) { ElevatedCard(modifier) { Column(Modifier.padding(12.dp)) { Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold); Text(label, style = MaterialTheme.typography.labelMedium) } } }
+
+@Composable
+private fun SummaryCard(value: String, label: String, modifier: Modifier = Modifier) {
+    ElevatedCard(modifier) {
+        Column(Modifier.padding(12.dp)) {
+            Text(value, style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.Bold)
+            Text(label, style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+    }
+}
