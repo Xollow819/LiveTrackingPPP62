@@ -4,6 +4,12 @@ Everything here is **free** and needs **no credit card**. The app works fully
 offline without any of this; the backend only adds live multi-device tracking
 (students' GPS visible on the lecturer's phone) and shared evidence photos.
 
+**How it works now:** the Supabase URL + anon key are baked into the APK at
+build time (from the gitignored `local.properties`, never committed to git).
+Students just install the APK — there is no setup screen and nothing to type.
+The lecturer does steps 1–3 once, sends the two keys to whoever builds the
+APK, and every phone is online out of the box.
+
 ## 1. Create the free Supabase project (~5 minutes)
 
 1. Go to https://supabase.com and sign up (email or GitHub — no card asked).
@@ -31,18 +37,22 @@ The app signs students in anonymously — no email/password for anyone.
 1. Open **Authentication** → **Providers**.
 2. Find **Anonymous** and turn it **on**.
 
-## 4. Copy the two keys into the app (~1 minute)
+## 4. Bake the two keys into the APK (~1 minute)
 
 1. Open **Project Settings** (gear icon) → **API**.
 2. Copy the **Project URL** (looks like `https://xyzcompany.supabase.co`)
    and the **anon public** key (the long `eyJ…` string — this one is safe to
-   put in the app; never use the `service_role` key in the app).
-3. On the lecturer phone (and every student phone), open the app →
-   **Online backend settings**, paste both values, tap **Save & test connection**.
-   You should see “Connected ✓”.
+   ship in the app; never use the `service_role` key in the app).
+3. In the repo checkout, add to `local.properties` (gitignored — never committed):
+   ```
+   SUPABASE_URL=https://xyzcompany.supabase.co
+   SUPABASE_ANON_KEY=eyJ...
+   ```
+4. Build the APK (`assembleDebug` / `assembleRelease`). The app connects
+   automatically on launch — no settings screen, nothing to type per phone.
 
-Keys are stored only on the device (DataStore) — they are **not** in the APK
-and **not** committed to git.
+Keys live only in `local.properties` and inside the built APK — they are
+**not** committed to git.
 
 ## 5. Run a session
 

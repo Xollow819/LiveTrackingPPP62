@@ -29,7 +29,6 @@ class PPP62Application : Application(), Configuration.Provider {
             .fallbackToDestructiveMigration()
             .build()
         repository = PPPRepository(database.dao())
-        repository.scheduleSeed()
         backendConfig = BackendConfig(this)
         backend = SupabaseBackend(backendConfig)
     }

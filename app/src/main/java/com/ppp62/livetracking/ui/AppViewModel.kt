@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-data class StudentProfile(val name: String = "Student", val team: String = "Team A", val joined: Boolean = false)
+data class StudentProfile(val name: String = "", val team: String = "", val joined: Boolean = false)
 
 class AppViewModel(application: Application) : AndroidViewModel(application) {
     private val repository = (application as PPP62Application).repository
@@ -23,6 +23,20 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         private set
     var message = androidx.compose.runtime.mutableStateOf<String?>(null)
         private set
+    /**
+     * Checkpoints of the joined online session (the map the lecturer configured),
+     * held in memory so maps and check-ins work without a local copy.
+     */
+    var sessionCheckpoints = androidx.compose.runtime.mutableStateOf<List<CheckpointEntity>>(emptyList())
+        private set
+
+    fun setSessionCheckpoints(list: List<CheckpointEntity>) { sessionCheckpoints.value = list }
+
+    /** Field join for online sessions: no local demo session lookup, just the profile. */
+    fun joinField(name: String, team: String) {
+        profile.value = StudentProfile(name.trim(), team.trim(), true)
+        message.value = "Joined the field session"
+    }
 
     fun join(code: String, name: String, team: String, onResult: (Boolean) -> Unit) = viewModelScope.launch {
         val found = repository.joinSession(code)

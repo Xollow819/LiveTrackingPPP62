@@ -12,7 +12,7 @@ import androidx.compose.material3.Surface
 import androidx.core.content.ContextCompat
 import com.ppp62.livetracking.service.SyncWorker
 import com.ppp62.livetracking.ui.PPP62App
-import com.ppp62.livetracking.ui.theme.PPP62Theme
+import com.ppp62.livetracking.ui.theme.VenzaTheme
 
 class MainActivity : ComponentActivity() {
     private val backgroundLocation = registerForActivityResult(ActivityResultContracts.RequestPermission()) { }
@@ -30,7 +30,7 @@ class MainActivity : ComponentActivity() {
             if (Build.VERSION.SDK_INT >= 33) add(Manifest.permission.POST_NOTIFICATIONS)
         }.toTypedArray())
         SyncWorker.schedule(this)
-        setContent { PPP62Theme { Surface { PPP62App() } } }
+        setContent { VenzaTheme { Surface { PPP62App() } } }
     }
 
     /**
