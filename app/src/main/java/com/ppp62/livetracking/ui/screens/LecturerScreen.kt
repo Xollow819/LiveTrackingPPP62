@@ -7,6 +7,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -29,9 +30,9 @@ fun LecturerScreen(vm: AppViewModel, onBack: () -> Unit, onEditor: () -> Unit, o
             item { Row(Modifier.fillMaxWidth().padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) { FilledTonalButton(onClick = onEditor, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AddLocationAlt, null); Text(" Checkpoints") }; FilledTonalButton(onClick = onSubmissions, modifier = Modifier.weight(1f)) { Icon(Icons.Default.AssignmentTurnedIn, null); Text(" Submissions") } } }
             item { Text("Team filter", style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(16.dp, 14.dp, 16.dp, 4.dp)); Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) { teams.take(4).forEach { FilterChip(teamFilter == it, { teamFilter = it }, { Text(it) }) } } }
             item { Text("Participants", style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold, modifier = Modifier.padding(16.dp)) }
-            items(visiblePeople, key = { it.participantId }) { p ->
-                val stale = LocationUtils.isStale(p.recordedAt); val label = when { p.trackingState != TrackingState.LIVE -> p.trackingState.name; stale -> "STALE"; else -> "LIVE" }
-                ListItem(headlineContent = { Text(p.participantName) }, supportingContent = { Text("${p.team} • ±${p.accuracyMeters.toInt()} m • Battery ${p.batteryPercent}%") }, leadingContent = { Icon(if (label == "LIVE") Icons.Default.RadioButtonChecked else Icons.Default.Warning, null, tint = if (label == "LIVE") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary) }, trailingContent = { Text(label, style = MaterialTheme.typography.labelMedium) }); HorizontalDivider()
+            items(visiblePeople, key = { it.participantId }) { participant ->
+                val stale = LocationUtils.isStale(participant.recordedAt); val label = when { participant.trackingState != TrackingState.LIVE -> participant.trackingState.name; stale -> "STALE"; else -> "LIVE" }
+                ListItem(headlineContent = { Text(participant.participantName) }, supportingContent = { Text("${participant.team} • ±${participant.accuracyMeters.toInt()} m • Battery ${participant.batteryPercent}%") }, leadingContent = { Icon(if (label == "LIVE") Icons.Default.RadioButtonChecked else Icons.Default.Warning, null, tint = if (label == "LIVE") MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.tertiary) }, trailingContent = { Text(label, style = MaterialTheme.typography.labelMedium) }); HorizontalDivider()
             }
         }
     }

@@ -8,12 +8,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
-import com.ppp62.livetracking.data.TrackingState
 import com.ppp62.livetracking.service.LocationTrackingService
 import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.ui.components.OsmMap
@@ -46,8 +46,8 @@ fun StudentScreen(vm: AppViewModel, onBack: () -> Unit, onCheckIn: (String) -> U
                     Row(Modifier.fillMaxWidth().padding(16.dp), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                         if (!tracking) Button(onClick = {
                             tracking = true
-                            val i = Intent(context, LocationTrackingService::class.java).putExtra(LocationTrackingService.EXTRA_NAME, profile.name).putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
-                            ContextCompat.startForegroundService(context, i)
+                            val intent = Intent(context, LocationTrackingService::class.java).putExtra(LocationTrackingService.EXTRA_NAME, profile.name).putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
+                            ContextCompat.startForegroundService(context, intent)
                         }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.PlayArrow, null); Text(" Start tracking") }
                         else {
                             OutlinedButton(onClick = { context.startService(Intent(context, LocationTrackingService::class.java).setAction(LocationTrackingService.ACTION_PAUSE)) }, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Pause, null); Text(" Pause") }

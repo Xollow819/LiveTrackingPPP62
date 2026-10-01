@@ -1,29 +1,63 @@
 # Live Tracking PPP62
 
-Native Android pilot for supervised student practice in fish transportation and distribution. Built with Kotlin, Jetpack Compose, Material 3, Android foreground location services, and OpenStreetMap via osmdroid.
+Android application for supervised student practice in fish transportation and distribution logistics. Students join a practical session, share one live beacon per team vehicle, and record evidence at route checkpoints. Lecturers monitor progress, review exceptions, configure checkpoints, and export check-in reports.
 
-## Included
-- Student and lecturer role flows
-- OpenStreetMap route with checkpoints (no API key)
-- Android 14/15-compatible foreground location service
-- Student temperature, weight, condition, notes, and evidence UI
-- Lecturer live/stale/paused status dashboard
-- 75 m proximity and 90 s staleness utilities with tests
-- Local-first repository hooks for a future authenticated backend
+## V1 capabilities
+
+### Student
+- Join an active session using the demo code `PPP6201`.
+- Start, pause, resume, or finish Android foreground GPS tracking.
+- Continue tracking with the screen off, subject to Android background-location settings.
+- View OpenStreetMap checkpoints without a paid API key.
+- Check in with water temperature, consignment weight, fish condition, notes, GPS distance, and camera evidence.
+- Save evidence offline with Pending or Flagged status.
+
+### Lecturer
+- Monitor team vehicle locations and Live, Stale, Paused, or Finished states.
+- Filter participants by team.
+- See session metrics and exceptions.
+- Add ordered checkpoints with coordinates and a 20–500 m arrival radius.
+- Review check-ins and export a CSV report through Android sharing.
+
+### Engineering
+- Kotlin, Jetpack Compose, Material 3, and Navigation Compose.
+- Room database for sessions, checkpoints, evidence, and latest locations.
+- Foreground location service compatible with Android 14/15 declarations.
+- WorkManager synchronization hook with network constraints.
+- Camera evidence stored in private app storage through FileProvider.
+- OpenStreetMap through osmdroid.
+- Unit tests for proximity and 90-second staleness rules.
+- GitHub Actions build, lint, test, and debug-APK artifact.
 
 ## Run
-1. Open this directory in Android Studio Ladybug or newer.
-2. Use JDK 17 and let Android Studio sync Gradle.
-3. Run on Android 8.0+ (physical device recommended for GPS).
-4. Grant location and notification permissions. Background location must be enabled separately in system settings for full screen-off tracking.
 
-## Free API choice
-This pilot uses **OpenStreetMap raster tiles through osmdroid**, so no Google Maps billing account or API key is needed. Respect the [OpenStreetMap tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and use a dedicated tile provider or self-hosted tiles before a high-volume production release.
+1. Install Android Studio Ladybug or newer and JDK 17.
+2. Clone the repository and open its root directory.
+3. Let Android Studio install Android SDK 35 and sync Gradle.
+4. Run the `app` configuration on an Android 8.0+ device.
+5. Grant camera, precise location, and notification permissions. Enable **Allow all the time** location separately in Android settings for uninterrupted screen-off tracking.
+6. Select Student and use join code `PPP6201`, or select Lecturer to inspect the seeded demonstration session.
 
-## Production integration still required
-The app intentionally does not ship with shared cloud credentials. For multi-device real-time tracking, connect the service and repository hooks to one of:
-- Firebase Firestore/Storage on the Spark free tier for a pilot.
-- Supabase free tier with Row Level Security.
-- An institution-owned API/WebSocket service.
+Command-line verification:
 
-Add authenticated roles, team/session authorization, encrypted transport, retention rules, consent, CameraX capture, durable Room queues, WorkManager retry, and server-side CSV/report generation before production use.
+```bash
+./gradlew testDebugUnitTest lintDebug assembleDebug
+```
+
+## Free map service
+
+The app uses OpenStreetMap raster tiles through osmdroid, so it has no Google Maps key or billing dependency. The public OSM tile service is appropriate for development and small pilots only. Follow the [tile usage policy](https://operations.osmfoundation.org/policies/tiles/) and use a dedicated provider or self-hosted tiles for a high-volume deployment.
+
+## Cloud synchronization boundary
+
+V1 is fully functional on one device and deliberately does not embed shared cloud credentials. `PPP62_SYNC_ENDPOINT` can be supplied as a Gradle property and `SyncWorker` is the integration boundary. A production multi-device deployment still needs an authenticated Firebase/Supabase/institution backend, access rules, consent and retention policies, and server acknowledgement before Pending records are marked Synced.
+
+Do not place administrator secrets in `local.properties`, Gradle files, or the APK. Mobile clients must use short-lived user authentication and server-enforced role/session authorization.
+
+## Privacy checklist
+
+- Obtain informed location and photo consent before each practical session.
+- Track only while an active session is visible through the foreground notification.
+- Set a retention period for precise location history and evidence.
+- Restrict lecturers to their own sessions and students to their assigned team.
+- Document manual-override and out-of-radius review procedures.

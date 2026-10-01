@@ -11,6 +11,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
@@ -51,8 +52,8 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
             if (attempted && checkpoint.requiresPhoto && photoUri == null) Text("A photo is required", color = MaterialTheme.colorScheme.error)
             OutlinedTextField(notes, { notes = it }, label = { Text("Notes / exception explanation") }, minLines = 3, modifier = Modifier.fillMaxWidth())
             Button(onClick = {
-                attempted = true; val t = temperature.toDoubleOrNull(); val w = weight.toDoubleOrNull()
-                if (t != null && w != null && (!checkpoint.requiresPhoto || photoUri != null)) vm.submit(checkpoint, t, w, condition, notes, photoUri, own?.latitude, own?.longitude, onDone)
+                attempted = true; val temp = temperature.toDoubleOrNull(); val kg = weight.toDoubleOrNull()
+                if (temp != null && kg != null && (!checkpoint.requiresPhoto || photoUri != null)) vm.submit(checkpoint, temp, kg, condition, notes, photoUri, own?.latitude, own?.longitude, onDone)
             }, modifier = Modifier.fillMaxWidth().height(54.dp)) { Icon(Icons.Default.Save, null); Text(" Save check-in") }
             Text("Evidence is queued locally and remains marked Pending until an authenticated server confirms upload.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
