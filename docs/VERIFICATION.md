@@ -11,6 +11,8 @@ The app uses the Anthropic frontend-design direction in [DESIGN.md](DESIGN.md), 
 - PostgreSQL-compatible PGlite security checks cover atomic session creation, account ownership, forged roles, cross-session access, private photos, monotonic GPS events, flagged uploads, duplicate retries, closed sessions, and repeated migration application. PGlite supplies minimal auth/storage stubs; it does not replace acceptance against Supabase.
 - Screenshot review caught and corrected a transparent light-theme surface, panel rendering defects, unreadable map headers, and stale tile error notices. GPS is below search; map help retracts to an information control. Satellite tiles display on Android.
 
+- Configured-app cold launch on Pixel 8a passed after fixing the startup provider in v1.2.1. Only WorkManager's initializer is disabled; Supabase's SettingsInitializer is retained. A new native regression test for default auth/session and PKCE storage passes. Nine unit tests and lint pass for this patch.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
