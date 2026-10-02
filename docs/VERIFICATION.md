@@ -13,7 +13,7 @@ The app uses the Anthropic frontend-design direction in [DESIGN.md](DESIGN.md), 
 
 ## Remaining external acceptance
 
-The checkout has no Supabase URL/public client key or authenticated project deployment access. The app's online integration and migration are implemented, but migration deployment, authentication emails/redirects, realtime subscriptions and multi-device evidence sync are **not verified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
+The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
 
 A physical Android device is still required for real GPS movement, permission revocation, camera lifecycle, background tracking/battery behavior and sustained glass rendering performance. Emulator service-state and image tests do not establish these results.
 
