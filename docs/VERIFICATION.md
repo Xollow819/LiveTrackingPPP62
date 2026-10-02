@@ -61,6 +61,12 @@ The signed v1.2.7 build passed release lint and APK signature/package/installabi
 
 Disabled osmdroid's built-in plus/minus zoom buttons on map creation. Multi-touch controls remain enabled, so users can still zoom with pinch gestures. Verified by release lint, APK checks, and installation on the connected Vivo I2407; the zoom buttons no longer appear.
 
+## Edge-to-edge map under navigation — v1.2.9
+
+The lecturer and joined-student dashboards now draw the map behind their floating bottom navigation instead of ending the map viewport above it. The navigation height is measured at runtime; stats/journey panels and map attribution keep their clearance above the footer, and list tabs reserve scroll space for it.
+
+Release lint, APK signing/installability checks, and installation of v1.2.9 on the connected Vivo I2407 passed. On relaunch the app requested lecturer sign-in, so no map-session screenshot was available for this build without account credentials.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.

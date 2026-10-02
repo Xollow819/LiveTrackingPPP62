@@ -72,8 +72,8 @@ fun GlassPageHeader(
 }
 
 @Composable
-fun GlassNavigation(selected: Int, labels: List<String>, icons: List<androidx.compose.ui.graphics.vector.ImageVector>, onSelect: (Int)->Unit) {
-    GlassCard(Modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),shape=RoundedCornerShape(32.dp),translucent=true) {
+fun GlassNavigation(selected: Int, labels: List<String>, icons: List<androidx.compose.ui.graphics.vector.ImageVector>, modifier: Modifier = Modifier, onSelect: (Int)->Unit) {
+    GlassCard(modifier.fillMaxWidth().padding(horizontal=16.dp,vertical=10.dp),shape=RoundedCornerShape(32.dp),translucent=true) {
         Row(Modifier.fillMaxWidth().padding(6.dp),horizontalArrangement=Arrangement.SpaceEvenly) {
             labels.forEachIndexed { index,label ->
                 FilledTonalButton(onClick={onSelect(index)},colors=ButtonDefaults.filledTonalButtonColors(containerColor=if(selected==index) MaterialTheme.colorScheme.primaryContainer else androidx.compose.ui.graphics.Color.Transparent),contentPadding=PaddingValues(horizontal=12.dp,vertical=10.dp)) {
