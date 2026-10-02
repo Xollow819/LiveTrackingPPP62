@@ -24,8 +24,12 @@ class PPPRepository(private val dao: PPPDao) {
         photoUri: String?,
         latitude: Double?,
         longitude: Double?,
-        userId: String
+        userId: String,
+        phase: TransportPhase? = null,
     ) {
+        val id = phase?.let { TransportJourney.recordId(checkpoint.sessionId, userId, it) } ?: UUID.randomUUID().toString()
+        // Double taps/retries must never replace previously queued or uploaded evidence.
+        if (phase != null && dao.checkInById(id) != null) return
         val distance = if (latitude != null && longitude != null) LocationUtils.distanceMeters(latitude, longitude, checkpoint.latitude, checkpoint.longitude) else null
         val exception = when {
             distance == null -> "GPS unavailable"
@@ -33,11 +37,11 @@ class PPPRepository(private val dao: PPPDao) {
             checkpoint.requiresPhoto && photoUri.isNullOrBlank() -> "Photo evidence missing"
             else -> null
         }
-        dao.upsertCheckIn(
+        dao.insertCheckIn(
             CheckInEntity(
-                id = UUID.randomUUID().toString(), checkpointId = checkpoint.id, sessionId = checkpoint.sessionId,
+                id = id, checkpointId = checkpoint.id, sessionId = checkpoint.sessionId,
                 studentName = studentName.trim(), team = team.trim(), temperatureC = temperatureC, weightKg = weightKg,
-                condition = condition, notes = notes.trim(), photoUri = photoUri, latitude = latitude, longitude = longitude,
+                condition = condition, notes = phase?.let { TransportJourney.notes(it, notes) } ?: notes.trim(), photoUri = photoUri, latitude = latitude, longitude = longitude,
                 distanceMeters = distance, createdAt = System.currentTimeMillis(),
                 syncState = SyncState.PENDING, exceptionReason = exception, userId = userId
             )

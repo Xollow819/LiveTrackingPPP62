@@ -23,6 +23,9 @@ import com.ppp62.livetracking.ui.screens.*
 import com.ppp62.livetracking.ui.theme.VenzaTheme
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.job
+import androidx.lifecycle.viewModelScope
 import org.junit.Assert.*
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -33,6 +36,10 @@ class InterfaceTest {
     private val instrumentation get()=InstrumentationRegistry.getInstrumentation()
     private val automation get()=instrumentation.uiAutomation
     private val app get()=instrumentation.targetContext.applicationContext as PPP62Application
+    private fun testBackend()=BackendViewModel(app).also { vm ->
+        // These screens use local fixtures, not a concurrently restored live account.
+        runBlocking { vm.viewModelScope.coroutineContext.job.children.toList().forEach { it.cancelAndJoin() } }
+    }
     private fun render(content:@Composable ()->Unit):ActivityScenario<MainActivity> = ActivityScenario.launch(MainActivity::class.java).also {scenario->
         scenario.onActivity{activity->activity.setContent{VenzaTheme{androidx.compose.material3.Surface{CompositionLocalProvider(LocalGlassState provides remember{HazeState()}){content()}}}}}
     }
@@ -96,13 +103,13 @@ class InterfaceTest {
         }
     }
     @Test fun joinRequiresCodeNameAndTeam(){
-        val vm=AppViewModel(app);val bvm=BackendViewModel(app)
+        val vm=AppViewModel(app);val bvm=testBackend()
         render{StudentScreen(vm,bvm,{},{})}.use{
             click("Join session");node("Enter code, name and team");screenshot("student-join")
         }
     }
     @Test fun studentShowsMapStopsAndQueuedEvidence(){
-        val vm=AppViewModel(app);val bvm=BackendViewModel(app);val session="11111111-1111-1111-1111-111111111111"
+        val vm=AppViewModel(app);val bvm=testBackend();val session="11111111-1111-1111-1111-111111111111"
         runBlocking{
             app.backendConfig.saveDisplayName("Ayu");app.backendConfig.saveTeam("Team A")
             app.database.dao().replaceCheckpoints(session,listOf(CheckpointEntity("test-stop",session,"Harbour",-6.1,106.8,75.0,1,"Check oxygen")))
@@ -119,7 +126,7 @@ class InterfaceTest {
         }
     }
     @Test fun lecturerAccountIsReadableAndPasswordIsProtected(){
-        val bvm=BackendViewModel(app)
+        val bvm=testBackend()
         render{LecturerAccountScreen(bvm,{})}.use{node("Welcome back.");node("Password");screenshot("lecturer-account")}
     }
     @Test fun checkpointFormRejectsNonFiniteAndNegativeMeasurements(){
@@ -133,11 +140,11 @@ class InterfaceTest {
         }
     }
     @Test fun preferencesSupportOpaquePanels(){
-        val bvm=BackendViewModel(app)
+        val bvm=testBackend()
         render{PreferencesScreen(bvm,{})}.use{node("Reduce transparency");node("Connection");screenshot("preferences")}
     }
     @Test fun lecturerWorkspaceProvidesSessionSetupAndRouteEditing(){
-        val vm=AppViewModel(app);val bvm=BackendViewModel(app)
+        val vm=AppViewModel(app);val bvm=testBackend()
         bvm.lecturerAuthenticated.value=true
         render{LecturerScreen(vm,bvm,{},{})}.use{
             node("Field sessions");screenshot("lecturer-workspace")
@@ -146,7 +153,7 @@ class InterfaceTest {
         }
     }
     @Test fun lecturerMapOffersRouteEditing(){
-        val vm=AppViewModel(app);val bvm=BackendViewModel(app)
+        val vm=AppViewModel(app);val bvm=testBackend()
         bvm.lecturerAuthenticated.value=true;bvm.myRole.value="lecturer"
         bvm.onlineSession.value=SessionRow("11111111-1111-1111-1111-111111111111","ABC234","Morning practical")
         render{LecturerScreen(vm,bvm,{},{})}.use{

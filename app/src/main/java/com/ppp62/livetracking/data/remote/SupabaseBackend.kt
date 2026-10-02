@@ -7,6 +7,9 @@ import io.github.jan.supabase.auth.auth
 import io.github.jan.supabase.auth.providers.builtin.Email
 import io.github.jan.supabase.postgrest.postgrest
 import kotlinx.serialization.json.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlin.time.Duration.Companion.minutes
 import io.github.jan.supabase.createSupabaseClient
 import io.github.jan.supabase.postgrest.Postgrest
@@ -35,6 +38,7 @@ import java.util.UUID
  * - Supabase owns shared data; Room caches session data and queues evidence retries.
  */
 class SupabaseBackend(private val config: BackendConfig) {
+    private val signInLock = Mutex()
     val recoveryRequested=kotlinx.coroutines.flow.MutableStateFlow(false)
     private val wireJson = Json {encodeDefaults=true}
 
@@ -63,15 +67,16 @@ class SupabaseBackend(private val config: BackendConfig) {
     suspend fun isConfigured(): Boolean = config.isConfigured()
 
     /** Signs in anonymously if needed; returns the auth user id or null. */
-    suspend fun ensureSignedIn(): String? {
-        val c = client() ?: return null
+    suspend fun ensureSignedIn(): String? = signInLock.withLock {
+        val c = client() ?: return@withLock null
         c.auth.awaitInitialization()
-        return try {
+        try {
             c.auth.currentUserOrNull()?.id ?: run {
                 c.auth.signInAnonymously()
                 c.auth.currentUserOrNull()?.id
             }
-        } catch (_: Exception) { null }
+        } catch (e: CancellationException) { throw e }
+        catch (_: Exception) { null }
     }
 
     /** Lightweight connectivity + credentials check for the Settings screen. */

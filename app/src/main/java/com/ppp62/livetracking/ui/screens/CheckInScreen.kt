@@ -29,14 +29,15 @@ import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.core.content.FileProvider
 import com.ppp62.livetracking.data.FishCondition
+import com.ppp62.livetracking.data.TransportPhase
 import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.util.LocationUtils
 import java.io.File
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
-    val checkpoints by vm.checkpoints.collectAsState(); val locations by vm.locations.collectAsState()
+fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit, phase: TransportPhase? = null, onSaved: () -> Unit = onDone) {
+    val checkpoints by vm.checkpoints.collectAsState()
     val checkpoint = vm.sessionCheckpoints.value.firstOrNull { it.id == checkpointId }
         ?: checkpoints.firstOrNull { it.id == checkpointId }
     val context = LocalContext.current
@@ -68,8 +69,12 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
     Scaffold(topBar = { TopAppBar(title = { Text(checkpoint?.name ?: "Checkpoint check-in") }, navigationIcon = { IconButton(onClick = onDone) { Icon(Icons.Default.Close, null) } }) }) { pad ->
         Column(Modifier.padding(pad).imePadding().padding(horizontal = 18.dp, vertical = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(14.dp)) {
             if (checkpoint == null) { Text("Checkpoint not found"); return@Column }
-            Text("Field record", style = MaterialTheme.typography.headlineMedium)
-            Text("Capture the conditions and evidence for this arrival.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(phase?.label ?: "Field record", style = MaterialTheme.typography.headlineMedium)
+            Text(when (phase) {
+                TransportPhase.START -> "Record conditions before departure. Saving starts location sharing and your journey timer."
+                TransportPhase.END -> "Record conditions after arrival. Location sharing has stopped and your journey time is saved."
+                null -> "Capture the conditions and evidence for this arrival."
+            }, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             GlassCard(shape = RoundedCornerShape(22.dp), colors = CardDefaults.elevatedCardColors(containerColor = if (distance != null && distance <= checkpoint.radiusMeters) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.tertiaryContainer)) {
                 Row(Modifier.fillMaxWidth().padding(16.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     Icon(if (distance == null) Icons.Default.GpsOff else Icons.Default.GpsFixed, null)
@@ -95,7 +100,7 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
             }, modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp)) {
                 Row(Modifier.padding(18.dp), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
                     val evidenceIcon = if (photoUri == null) Icons.Default.AddAPhoto else Icons.Default.CheckCircle
-                    val evidenceTitle = if (photoUri == null) "Capture cargo/fish evidence *" else "Evidence photo captured"
+                    val evidenceTitle = if (photoUri == null) "Capture cargo/fish evidence${if (checkpoint.requiresPhoto) " *" else ""}" else "Evidence photo captured"
                     Icon(evidenceIcon, null, tint = MaterialTheme.colorScheme.primary)
                     Spacer(Modifier.width(12.dp))
                     Column {
@@ -115,12 +120,18 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit) {
                 if(RecordValidation.number(temperature,checkpoint.requiresTemperature) && RecordValidation.number(weight,checkpoint.requiresWeight,true) && (!checkpoint.requiresPhoto||photoUri!=null)) {
                     saving=true
                     scope.launch {
-                        try { locate(); val fresh=fix?.takeIf{System.currentTimeMillis()-it.time<120_000}
-                            vm.submit(checkpoint,temp,kg,condition,notes,photoUri,fresh?.takeIf{it.accuracy<=100}?.latitude,fresh?.takeIf{it.accuracy<=100}?.longitude,onDone).join()
+                        try {
+                            if (fix == null || System.currentTimeMillis() - fix!!.time !in 0..30_000 || fix!!.accuracy > 100) locate()
+                            val fresh=fix?.takeIf{System.currentTimeMillis()-it.time in 0..120_000}
+                            vm.submit(checkpoint,temp,kg,condition,notes,photoUri,fresh?.takeIf{it.accuracy<=100}?.latitude,fresh?.takeIf{it.accuracy<=100}?.longitude,onSaved,phase).join()
                         } finally {saving=false}
                     }
                 }
-            }, enabled=!saving&&!locating, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text(if(saving) "Saving…" else "Save check-in") }
+            }, enabled=!saving&&!locating, modifier = Modifier.fillMaxWidth().height(56.dp), shape = RoundedCornerShape(18.dp)) { Icon(Icons.Default.Save, null); Spacer(Modifier.width(8.dp)); Text(if(saving) "Saving…" else when (phase) {
+                TransportPhase.START -> "Save and start sharing"
+                TransportPhase.END -> "Save ending conditions"
+                null -> "Save check-in"
+            }) }
 
             Text("Evidence is queued locally and remains marked Pending until an authenticated server confirms upload.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }

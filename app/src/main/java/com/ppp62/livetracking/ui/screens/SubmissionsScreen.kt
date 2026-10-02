@@ -22,6 +22,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.SyncState
+import com.ppp62.livetracking.data.TransportJourney
 import com.ppp62.livetracking.data.remote.SubmissionRow
 import com.ppp62.livetracking.ui.AppViewModel
 import com.ppp62.livetracking.ui.BackendViewModel
@@ -64,7 +65,8 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
                     GlassCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) {
                         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text(item.checkpointName.ifBlank { "Checkpoint" }, fontWeight = FontWeight.Bold)
+                                Text(TransportJourney.phase(item.id, item.sessionId, item.userId)?.let { "${it.label} · ${item.checkpointName}" }
+                                    ?: item.checkpointName.ifBlank { "Checkpoint" }, fontWeight = FontWeight.Bold)
                                 AssistChip(onClick = {}, label = { Text("ONLINE") }, leadingIcon = { Icon(Icons.Default.CloudDone, null) })
                             }
                             Text("${item.displayName} · ${item.team}")
@@ -87,7 +89,7 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
             else items(uniqueLocal, key = { it.id }) { item ->
             val cp = checkpoints.firstOrNull { it.id == item.checkpointId }?.name ?: item.checkpointId
             GlassCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(cp, fontWeight = FontWeight.Bold); AssistChip(onClick = {}, label = { Text(item.syncState.name) }, leadingIcon = { Icon(if (item.syncState == SyncState.FLAGGED) Icons.Default.Warning else Icons.Default.CloudUpload, null) }) }
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(TransportJourney.phase(item.id, item.sessionId, item.userId)?.let { "${it.label} · $cp" } ?: cp, fontWeight = FontWeight.Bold); AssistChip(onClick = {}, label = { Text(item.syncState.name) }, leadingIcon = { Icon(if (item.syncState == SyncState.FLAGGED) Icons.Default.Warning else Icons.Default.CloudUpload, null) }) }
                 Text("${item.studentName} • ${item.team}"); Text("${item.temperatureC ?: "—"} °C • ${item.weightKg ?: "—"} kg • ${item.condition.name}")
                 item.distanceMeters?.let { Text("Distance ${it.toInt()} m") }; item.exceptionReason?.let { Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) }
                 item.photoUri?.let { EvidenceThumbnail(it) }

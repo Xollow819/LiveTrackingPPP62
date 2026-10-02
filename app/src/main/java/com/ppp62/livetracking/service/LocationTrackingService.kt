@@ -28,6 +28,7 @@ class LocationTrackingService : Service(), LocationListener {
     private var lastFix: Location? = null
     private var heartbeat: Job? = null
     private val prefs by lazy { getSharedPreferences("tracking_service", MODE_PRIVATE) }
+    private val journey by lazy { JourneyStore(this) }
     private val arrived = mutableSetOf<String>()
 
     override fun onCreate() {
@@ -42,7 +43,9 @@ class LocationTrackingService : Service(), LocationListener {
         sessionId = intent?.getStringExtra(EXTRA_SESSION) ?: prefs.getString("session", "").orEmpty()
         userId = intent?.getStringExtra(EXTRA_USER) ?: prefs.getString("user", "").orEmpty()
         if (sessionId.isBlank() || userId.isBlank() || (intent == null && !prefs.getBoolean("sharing", false))) { stopSelf(); return START_NOT_STICKY }
+        if ((intent?.action == ACTION_PAUSE || intent?.action == ACTION_RESUME) && !prefs.getBoolean("sharing", false)) { stopSelf(); return START_NOT_STICKY }
         prefs.edit().putString("name",participantName).putString("team",team).putString("session",sessionId).putString("user",userId).apply()
+        identity.value = sessionId to userId
         when (intent?.action) {
             ACTION_PAUSE -> pauseTracking()
             ACTION_FINISH -> finishTracking()
@@ -54,11 +57,13 @@ class LocationTrackingService : Service(), LocationListener {
         if (!com.ppp62.livetracking.util.DeviceLocation.hasPermission(this)) { prefs.edit().putBoolean("sharing",false).apply();state.value=TrackingState.FINISHED;stopSelf();return }
         try {
             startForeground(NOTIFICATION_ID, notification("Sharing live location", ACTION_PAUSE, "Pause"))
+            if (journey.load(sessionId, userId).finishedAt > 0) { finishTracking(); return }
+            journey.resume(sessionId, userId)
             paused = false; state.value = TrackingState.LIVE
             prefs.edit().putBoolean("sharing",true).putBoolean("paused",false).apply()
             manager.removeUpdates(this)
-            if(manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10_000L, 0f, this)
-            if(manager.allProviders.contains(LocationManager.NETWORK_PROVIDER)) manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10_000L, 0f, this)
+            if(ActivityCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED && manager.isProviderEnabled(LocationManager.GPS_PROVIDER)) manager.requestLocationUpdates(LocationManager.GPS_PROVIDER, 10_000L, 0f, this)
+            if(manager.allProviders.contains(LocationManager.NETWORK_PROVIDER) && manager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) manager.requestLocationUpdates(LocationManager.NETWORK_PROVIDER, 10_000L, 0f, this)
             heartbeat?.cancel()
             heartbeat=scope.launch {
                 while(isActive) {
@@ -75,6 +80,7 @@ class LocationTrackingService : Service(), LocationListener {
         catch (_: IllegalArgumentException) { state.value=TrackingState.STALE }
     }
     private fun pauseTracking() {
+        journey.pause(sessionId, userId)
         paused=true; state.value=TrackingState.PAUSED
         prefs.edit().putBoolean("paused",true).apply()
         manager.removeUpdates(this); heartbeat?.cancel()
@@ -82,12 +88,13 @@ class LocationTrackingService : Service(), LocationListener {
         scope.launch { persistState(TrackingState.PAUSED) }
     }
     private fun finishTracking() {
+        journey.finish(sessionId, userId)
         paused=true; state.value=TrackingState.FINISHED
         prefs.edit().putBoolean("sharing",false).putBoolean("paused",false).apply()
         manager.removeUpdates(this); heartbeat?.cancel()
         scope.launch {
-            persistState(TrackingState.FINISHED)
-            withContext(Dispatchers.Main) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+            try { persistState(TrackingState.FINISHED) }
+            finally { withContext(Dispatchers.Main) { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() } }
         }
     }
     private suspend fun persistState(value:TrackingState) {
@@ -145,10 +152,16 @@ class LocationTrackingService : Service(), LocationListener {
 
     private fun repository() = (application as PPP62Application).repository
     override fun onBind(intent: Intent?): IBinder? = null
-    override fun onDestroy() { if (::manager.isInitialized) manager.removeUpdates(this); prefs.edit().putBoolean("sharing",false).apply(); state.value=TrackingState.FINISHED; scope.cancel(); super.onDestroy() }
+    override fun onDestroy() {
+        if (sessionId.isNotBlank() && userId.isNotBlank()) journey.finish(sessionId, userId)
+        if (::manager.isInitialized) manager.removeUpdates(this)
+        prefs.edit().putBoolean("sharing",false).apply(); state.value=TrackingState.FINISHED; identity.value=null
+        scope.cancel(); super.onDestroy()
+    }
 
     companion object {
         val state = kotlinx.coroutines.flow.MutableStateFlow(TrackingState.FINISHED)
+        val identity = kotlinx.coroutines.flow.MutableStateFlow<Pair<String, String>?>(null)
         const val EXTRA_SESSION = "session_id"; const val EXTRA_USER = "user_id"
         const val CHANNEL = "ppp62_tracking"; const val NOTIFICATION_ID = 62
         const val ACTION_PAUSE = "ppp62.PAUSE"; const val ACTION_RESUME = "ppp62.RESUME"; const val ACTION_FINISH = "ppp62.FINISH"

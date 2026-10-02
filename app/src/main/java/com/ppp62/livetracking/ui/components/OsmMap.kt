@@ -35,6 +35,10 @@ import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
 import org.osmdroid.views.overlay.Overlay
+import org.osmdroid.views.overlay.Polyline
+import org.osmdroid.util.BoundingBox
+import android.view.View
+import com.ppp62.livetracking.util.RouteCoordinate
 import kotlinx.coroutines.delay
 
 /**
@@ -59,6 +63,11 @@ fun OsmMap(
     layersTopPadding: Dp = 72.dp,
     attributionBottomPadding: Dp = 0.dp,
     viewportKey: String = "explore",
+    routePoints: List<RouteCoordinate> = emptyList(),
+    roadRoute: Boolean = true,
+    fitCheckpoints: Boolean = false,
+    routeOverviewRequest: Int = 0,
+    active: Boolean = true,
 ) {
     val context = LocalContext.current
     val tapHandler = rememberUpdatedState(onMapTap)
@@ -97,8 +106,17 @@ fun OsmMap(
             controller.setZoom(if (savedViewport != null) Double.fromBits(viewportPrefs.getLong("$viewportKey.zoom", 15.0.toBits())) else if (initial != null) 15.0 else 13.5)
             controller.setCenter(initial ?: GeoPoint(-6.1751, 106.8650))
             // Queue the visible center before the first raster scan queues the surrounding tiles.
-            addOnFirstLayoutListener { _, _, _, _, _ -> requestCenterTile(this) }
+            addOnFirstLayoutListener { _, _, _, _, _ ->
+                if (fitCheckpoints && savedViewport == null && checkpoints.size > 1) {
+                    zoomToBoundingBox(BoundingBox.fromGeoPoints(checkpoints.map { GeoPoint(it.latitude, it.longitude) }), false, (48 * context.resources.displayMetrics.density).toInt(), 17.0, null)
+                }
+                requestCenterTile(this)
+            }
         }
+    }
+    LaunchedEffect(map, active) {
+        map.visibility = if (active) View.VISIBLE else View.GONE
+        if (active) map.onResume() else map.onPause()
     }
     LaunchedEffect(map, mapStyle, retry) {
         tileError = null
@@ -138,7 +156,7 @@ fun OsmMap(
             map.tileProvider.tileRequestCompleteHandlers.remove(tileHandler); tileHandler.removeCallbacksAndMessages(null); map.onPause(); map.onDetach() }
     }
 
-    var centeredOnDevice by remember(map) { mutableStateOf(savedViewport != null || myLocation != null) }
+    var centeredOnDevice by remember(map) { mutableStateOf(savedViewport != null || myLocation != null || fitCheckpoints && checkpoints.isNotEmpty()) }
     LaunchedEffect(myLocation) {
         if (!centeredOnDevice && myLocation != null) {
             centeredOnDevice = true
@@ -151,8 +169,32 @@ fun OsmMap(
         if (!routeFocused && checkpoints.isNotEmpty() && viewportKey != "explore") {
             routeFocused = true
             val first = checkpoints.first()
-            map.controller.setZoom(15.0)
-            map.controller.setCenter(GeoPoint(first.latitude, first.longitude))
+            if (fitCheckpoints && checkpoints.size > 1 && map.width > 0) {
+                map.zoomToBoundingBox(BoundingBox.fromGeoPoints(checkpoints.map { GeoPoint(it.latitude, it.longitude) }), false, (48 * context.resources.displayMetrics.density).toInt(), 17.0, null)
+                centeredOnDevice = true
+            } else { map.controller.setZoom(15.0); map.controller.setCenter(GeoPoint(first.latitude, first.longitude)) }
+        }
+    }
+    val lineOverlays = remember(map) { mutableListOf<Overlay>() }
+    LaunchedEffect(map, routePoints, roadRoute) {
+        map.overlays.removeAll(lineOverlays.toSet()); lineOverlays.clear()
+        if (routePoints.size > 1) {
+            val points = routePoints.map { GeoPoint(it.latitude, it.longitude) }
+            val density = context.resources.displayMetrics.density
+            lineOverlays.add(Polyline().apply { setPoints(points); outlinePaint.color = AndroidColor.WHITE; outlinePaint.strokeWidth = 9 * density })
+            lineOverlays.add(Polyline().apply {
+                setPoints(points); outlinePaint.color = AndroidColor.parseColor("#0A84FF"); outlinePaint.strokeWidth = 5 * density
+                if (!roadRoute) outlinePaint.pathEffect = android.graphics.DashPathEffect(floatArrayOf(10 * density, 7 * density), 0f)
+            })
+            map.overlays.addAll(minOf(1, map.overlays.size), lineOverlays)
+        }
+        map.invalidate()
+    }
+    LaunchedEffect(map, routeOverviewRequest) {
+        if (routeOverviewRequest > 0 && checkpoints.isNotEmpty()) {
+            val points = checkpoints.map { GeoPoint(it.latitude, it.longitude) } + routePoints.map { GeoPoint(it.latitude, it.longitude) }
+            if (points.size > 1 && points.distinct().size > 1) map.zoomToBoundingBox(BoundingBox.fromGeoPoints(points), true, (64 * context.resources.displayMetrics.density).toInt(), 17.0, null)
+            else { map.controller.setCenter(points.first()); map.controller.setZoom(16.0) }
         }
     }
     val routeOverlays = remember(map) { mutableListOf<Overlay>() }
@@ -182,7 +224,7 @@ fun OsmMap(
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             })
         }
-        map.overlays.addAll(minOf(1, map.overlays.size), routeOverlays)
+        map.overlays.addAll(minOf(1 + lineOverlays.size, map.overlays.size), routeOverlays)
         map.invalidate()
     }
     var freshnessTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -226,6 +268,7 @@ fun OsmMap(
         // Each button press is a request, even if its coordinates match the previous fix.
         if (target != null && target !== lastCameraRequest[0]) {
             lastCameraRequest[0] = target
+            routeFocused = true; centeredOnDevice = true
             map.controller.animateTo(target)
             if (map.zoomLevelDouble < targetZoom) map.controller.setZoom(targetZoom)
         }
@@ -233,8 +276,8 @@ fun OsmMap(
 
     Box(modifier) {
         AndroidView(factory = { map }, modifier = Modifier.fillMaxSize().glassSource(LocalGlassState.current))
-        MapLayersControl(mapStyle, { saveMapStyle(context, it) }, Modifier.align(Alignment.TopEnd).padding(top = layersTopPadding, end = 12.dp))
-        if (tileError != null) {
+        if (active) MapLayersControl(mapStyle, { saveMapStyle(context, it) }, Modifier.align(Alignment.TopEnd).padding(top = layersTopPadding, end = 12.dp))
+        if (active && tileError != null) {
             Surface(Modifier.align(Alignment.CenterStart).padding(12.dp).widthIn(max = 230.dp), shape = MaterialTheme.shapes.medium, shadowElevation = 3.dp) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                         Text(tileError.orEmpty(), style = MaterialTheme.typography.bodySmall)
@@ -245,9 +288,10 @@ fun OsmMap(
                 }
             }
         }
-        val attribution = if (mapStyle == MapStyle.Satellite) metadata.attribution else "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>"
+        val attribution = (if (mapStyle == MapStyle.Satellite) metadata.attribution else "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>") +
+            if (roadRoute && routePoints.isNotEmpty()) " · Route © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> · <a href=\"https://routing.openstreetmap.de/about.html\">FOSSGIS</a> · <a href=\"https://www.openstreetmap.org/fixthemap\">Fix the map</a>" else ""
         val attributionText = remember(attribution) { Html.fromHtml(attribution, Html.FROM_HTML_MODE_LEGACY) }
-        Surface(Modifier.align(Alignment.BottomStart).padding(bottom = attributionBottomPadding).fillMaxWidth(.82f), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
+        if (active) Surface(Modifier.align(Alignment.BottomStart).padding(bottom = attributionBottomPadding).fillMaxWidth(.82f), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
             val textColor = MaterialTheme.colorScheme.onSurface
             AndroidView(factory = { TextView(it).apply { textSize = 10f; setPadding(8, 2, 8, 2); movementMethod = LinkMovementMethod.getInstance() } }, update = {
                 if (it.text.toString() != attributionText.toString()) it.text = attributionText

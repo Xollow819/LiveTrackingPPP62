@@ -28,12 +28,17 @@ interface PPPDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCheckpoint(value: CheckpointEntity)
     @Query("DELETE FROM checkpoints WHERE sessionId = :sessionId") suspend fun clearCheckpoints(sessionId: String)
     @Query("SELECT * FROM checkpoints WHERE sessionId = :sessionId ORDER BY orderIndex") suspend fun checkpointsForSession(sessionId: String): List<CheckpointEntity>
-    @Transaction suspend fun replaceCheckpoints(sessionId: String, values: List<CheckpointEntity>) { clearCheckpoints(sessionId); upsertCheckpoints(values) }
+    @Transaction suspend fun replaceCheckpoints(sessionId: String, values: List<CheckpointEntity>) {
+        if (checkpointsForSession(sessionId) == values.sortedBy { it.orderIndex }) return
+        clearCheckpoints(sessionId); upsertCheckpoints(values)
+    }
     @Delete suspend fun deleteCheckpoint(value: CheckpointEntity)
 
     @Query("SELECT * FROM check_ins WHERE sessionId = :sessionId ORDER BY createdAt DESC") fun observeCheckIns(sessionId: String): Flow<List<CheckInEntity>>
     @Query("SELECT * FROM check_ins WHERE syncState IN ('PENDING','FLAGGED') ORDER BY createdAt") suspend fun pendingCheckIns(): List<CheckInEntity>
     @Insert(onConflict = OnConflictStrategy.REPLACE) suspend fun upsertCheckIn(value: CheckInEntity)
+    @Insert(onConflict = OnConflictStrategy.IGNORE) suspend fun insertCheckIn(value: CheckInEntity): Long
+    @Query("SELECT * FROM check_ins WHERE id=:id LIMIT 1") suspend fun checkInById(id: String): CheckInEntity?
     @Query("UPDATE check_ins SET syncState='FAILED',uploadError=:error WHERE id=:id") suspend fun failCheckIn(id:String,error:String)
     @Query("UPDATE check_ins SET syncState='PENDING',uploadError=NULL WHERE syncState='FAILED' AND userId=:userId") suspend fun retryFailed(userId:String)
     @Query("UPDATE check_ins SET syncState = :state WHERE id = :id") suspend fun setCheckInSyncState(id: String, state: SyncState)

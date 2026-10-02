@@ -138,7 +138,7 @@ class BackendViewModel(application: Application) : AndroidViewModel(application)
         catch(e:Exception) { failed(e) }
     }
     fun leaveSession() = viewModelScope.launch {
-        if(LocationTrackingService.state.value==TrackingState.LIVE || LocationTrackingService.state.value==TrackingState.PAUSED)
+        if(LocationTrackingService.identity.value!=null && LocationTrackingService.state.value!=TrackingState.FINISHED)
             app.startService(Intent(app,LocationTrackingService::class.java).setAction(LocationTrackingService.ACTION_FINISH))
         config.clearOnlineSession(); stopObserving(); app.repository.selectSession(null)
         onlineSession.value=null; myRole.value="student"

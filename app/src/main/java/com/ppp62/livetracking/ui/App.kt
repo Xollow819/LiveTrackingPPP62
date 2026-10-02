@@ -15,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.navigation.compose.*
 import com.ppp62.livetracking.data.UserRole
+import com.ppp62.livetracking.data.TransportPhase
 import com.ppp62.livetracking.ui.screens.*
 
 @Composable
@@ -56,8 +57,18 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
                 if(bvm.onlineSession.value!=null && bvm.myRole.value!=nextRole){bvm.leaveSession().join();vm.resetSession()}
                 nav.navigate(nextRole)
             } }, onPreferences = {nav.navigate("preferences")}) }
-            composable("student") { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") }) }
-            composable("checkin/{checkpointId}") { entry -> CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty()) { nav.popBackStack() } }
+            composable("student") { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") },
+                onTransportRecord = { checkpoint, phase -> nav.navigate("transport/${phase.name}/$checkpoint") }) }
+            composable("transport/{phase}/{checkpointId}") { entry ->
+                val phase = TransportPhase.valueOf(entry.arguments?.getString("phase").orEmpty())
+                CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty(), { nav.popBackStack() }, phase) {
+                    if (phase == TransportPhase.START && bvm.onlineSession.value?.isActive == true) {
+                        bvm.myUserId.value?.let { vm.startSharing(bvm.onlineSession.value!!.id, it) }
+                    }
+                    nav.popBackStack()
+                }
+            }
+            composable("checkin/{checkpointId}") { entry -> CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty(), { nav.popBackStack() }) }
             composable("lecturer") { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onSubmissions = { nav.navigate("submissions") }) }
             composable("preferences") { PreferencesScreen(bvm) {nav.popBackStack()} }
             composable("submissions") { SubmissionsScreen(vm, bvm) { nav.popBackStack() } }

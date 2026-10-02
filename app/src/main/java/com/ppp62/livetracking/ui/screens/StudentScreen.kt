@@ -20,99 +20,235 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.core.content.ContextCompat
 import com.ppp62.livetracking.data.*
 import com.ppp62.livetracking.ui.*
 import com.ppp62.livetracking.ui.components.*
 import com.ppp62.livetracking.service.LocationTrackingService
-import com.ppp62.livetracking.service.SyncWorker
 import com.ppp62.livetracking.util.DeviceLocation
 import org.osmdroid.util.GeoPoint
 import kotlinx.coroutines.delay
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun StudentScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()->Unit,onCheckIn:(String)->Unit) {
-    val context=LocalContext.current
+fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, onCheckIn: (String) -> Unit,
+    onTransportRecord: (String, TransportPhase) -> Unit = { id, _ -> onCheckIn(id) }) {
+    val context = LocalContext.current
     val profile by vm.profile; val session by bvm.onlineSession; val role by bvm.myRole
-    val cps by vm.checkpoints.collectAsState(); val locations by vm.locations.collectAsState(); val allRecords by vm.checkIns.collectAsState()
-    val records=allRecords.filter{it.userId==bvm.myUserId.value}
+    val checkpoints by vm.checkpoints.collectAsState(); val locations by vm.locations.collectAsState()
+    val allRecords by vm.checkIns.collectAsState(); val onlineRecords by bvm.onlineSubmissions.collectAsState()
+    val savedTransportRecords by vm.savedTransportRecords.collectAsState()
+    val userId by bvm.myUserId
+    val cps = remember(checkpoints, session?.id) { TransportJourney.ordered(checkpoints.filter { it.sessionId == session?.id }) }
+    val records = remember(allRecords, userId, session?.id) { allRecords.filter { it.userId == userId && it.sessionId == session?.id } }
+    val remoteRecords = remember(onlineRecords, userId, session?.id) { onlineRecords.filter { it.userId == userId && it.sessionId == session?.id } }
     val serviceState by LocationTrackingService.state.collectAsState()
+    val serviceIdentity by LocationTrackingService.identity.collectAsState()
+    val store = remember(context) { JourneyStore(context) }
+    val timingFlow = remember(session?.id, userId) { store.observe(session?.id.orEmpty(), userId.orEmpty()) }
+    val timing by timingFlow.collectAsState(initial = store.load(session?.id.orEmpty(), userId.orEmpty()))
     var code by rememberSaveable { mutableStateOf("") }; var name by rememberSaveable { mutableStateOf("") }; var team by rememberSaveable { mutableStateOf("") }
-    var error by remember { mutableStateOf<String?>(null) }; var joining by remember { mutableStateOf(false) }; var tab by rememberSaveable { mutableIntStateOf(0) }
-    var target by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }; var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
-    LaunchedEffect(Unit) { while(true) {now=System.currentTimeMillis();delay(5000)} }
+    var error by remember { mutableStateOf<String?>(null) }; var joining by remember { mutableStateOf(false) }
+    var tab by rememberSaveable { mutableIntStateOf(0) }
     LaunchedEffect(cps) { vm.setSessionCheckpoints(cps) }
-    LaunchedEffect(session?.id,role) {
-        if(session!=null && role=="student") { val identity=bvm.savedIdentity();vm.joinField(identity.first,identity.second) }
+    LaunchedEffect(session?.id, role) {
+        if (session != null && role == "student") { val identity = bvm.savedIdentity(); vm.joinField(identity.first, identity.second) }
         else vm.resetSession()
     }
-    val own=locations.firstOrNull {it.participantId==bvm.myUserId.value}
-    val sharing=serviceState==TrackingState.LIVE || serviceState==TrackingState.PAUSED
-    val notificationPermission=rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    fun start() {
-        if(session?.isActive!=true || bvm.myUserId.value==null) return
-        try {
-            ContextCompat.startForegroundService(context,Intent(context,LocationTrackingService::class.java)
-                .putExtra(LocationTrackingService.EXTRA_SESSION,session!!.id).putExtra(LocationTrackingService.EXTRA_USER,bvm.myUserId.value)
-                .putExtra(LocationTrackingService.EXTRA_NAME,profile.name).putExtra(LocationTrackingService.EXTRA_TEAM,profile.team))
-            if(Build.VERSION.SDK_INT>=33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-        } catch(e:Exception) {error="Unable to start sharing. Check location permissions."}
+    val own = locations.firstOrNull { it.participantId == userId && it.sessionId == session?.id }
+    val serviceMatches = serviceIdentity == (session?.id to userId)
+    val sharing = serviceMatches && serviceState != TrackingState.FINISHED
+    fun hasRecord(phase: TransportPhase): Boolean {
+        val id = TransportJourney.recordId(session?.id.orEmpty(), userId.orEmpty(), phase)
+        return id in savedTransportRecords || records.any { it.id == id } || remoteRecords.any { it.id == id }
     }
-    val permission=rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants -> if(grants.values.any{it}) start() else error="Allow location access before sharing" }
-    Scaffold(topBar={TopAppBar(title={Column {Text(session?.title?.ifBlank{"Field session"} ?: "Field session",style=MaterialTheme.typography.titleLarge);Text(if(profile.joined) "${profile.name} · ${profile.team}" else "Your route starts here",style=MaterialTheme.typography.labelMedium)}},navigationIcon={IconButton(onClick=onBack){Icon(Icons.Default.ArrowBack,"Back")}},actions={if(profile.joined) IconButton(onClick={bvm.leaveSession();vm.resetSession()}){Icon(Icons.Default.Logout,"Leave session")}})},bottomBar={
-        if(profile.joined && session!=null && role=="student") GlassNavigation(tab,listOf("Map","Stops","Records"),listOf(Icons.Default.Map,Icons.Default.Route,Icons.Default.ReceiptLong)){tab=it}
+    val hasStart = hasRecord(TransportPhase.START); val hasEnd = hasRecord(TransportPhase.END)
+    val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    fun start() {
+        val current = session ?: return
+        val uid = userId ?: return
+        if (!current.isActive || hasEnd || timing.finishedAt > 0) return
+        error = null
+        if (!DeviceLocation.locationEnabled(context)) { error = "Enable device location before sharing."; return }
+        if (Build.VERSION.SDK_INT >= 33) notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
+        if (hasStart) vm.startSharing(current.id, uid)
+        else TransportJourney.endpoint(cps, TransportPhase.START)?.let { onTransportRecord(it.id, TransportPhase.START) }
+            ?: run { error = "Wait for your lecturer to add the route." }
+    }
+    val permission = rememberLauncherForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { grants ->
+        if (grants.values.any { it }) start() else error = "Allow location access before sharing."
+    }
+    fun finish() {
+        val current = session ?: return
+        val uid = userId ?: return
+        vm.finishSharing(current.id, uid)
+        val endpoint = TransportJourney.endpoint(cps, TransportPhase.END)
+        if (endpoint != null) onTransportRecord(endpoint.id, TransportPhase.END)
+        else error = "Sharing stopped. Wait for the lecturer’s route to record ending conditions."
+    }
+    Scaffold(topBar = { TopAppBar(title = { Column {
+        Text(session?.title?.ifBlank { "Field session" } ?: "Field session", style = MaterialTheme.typography.titleLarge)
+        Text(if (profile.joined) "${profile.name} · ${profile.team}" else "Your route starts here", style = MaterialTheme.typography.labelMedium)
+    } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") } }, actions = {
+        if (profile.joined) IconButton(onClick = { bvm.leaveSession(); vm.resetSession() }) { Icon(Icons.Default.Logout, "Leave session") }
+    }) }, bottomBar = {
+        if (profile.joined && session != null && role == "student") GlassNavigation(tab, listOf("Map", "Stops", "Records"), listOf(Icons.Default.Map, Icons.Default.Route, Icons.Default.ReceiptLong)) { tab = it }
     }) { pad ->
-        if(!profile.joined || session==null || role!="student") JoinForm(code,{code=it.uppercase()},name,{name=it},team,{team=it},error,joining,{
-            if(code.isBlank()||name.isBlank()||team.isBlank()) error="Enter code, name and team"
-            else {joining=true;bvm.joinOnline(code,name,"student",team=team,onError={joining=false;error=it},onJoined={joining=false;vm.joinField(name,team)})}
-        },Modifier.fillMaxSize().padding(pad))
-        else when(tab) {
-            0 -> Box(Modifier.fillMaxSize().padding(pad)) {
-                OsmMap(Modifier.fillMaxSize(),cps,listOfNotNull(own),myLocation=own?.let{GeoPoint(it.latitude,it.longitude)},target=target,viewportKey="student-${session!!.id}",layersTopPadding=124.dp,attributionBottomPadding=160.dp)
-                MapExploreControls({target=it},Modifier.align(Alignment.TopEnd).padding(12.dp))
-                GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)) {
-                    Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                        Row(verticalAlignment=Alignment.CenterVertically) {
-                            Icon(if(sharing) Icons.Default.GpsFixed else Icons.Default.GpsOff,null,tint=MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp)); Column(Modifier.weight(1f)) {
-                                Text(if(!session!!.isActive) "Session completed" else if(serviceState==TrackingState.PAUSED) "Sharing paused" else if(sharing) "Sharing location" else "Ready when you are",style=MaterialTheme.typography.titleMedium)
-                                Text(own?.let{"±${it.accuracyMeters.toInt()} m · ${((now-it.recordedAt).coerceAtLeast(0)/1000)}s ago"} ?: "Waiting for a location fix",style=MaterialTheme.typography.bodySmall)
+        if (!profile.joined || session == null || role != "student") JoinForm(code, { code = it.uppercase() }, name, { name = it }, team, { team = it }, error, joining, {
+            if (code.isBlank() || name.isBlank() || team.isBlank()) error = "Enter code, name and team"
+            else { joining = true; bvm.joinOnline(code, name, "student", team = team, onError = { joining = false; error = it }, onJoined = { joining = false; vm.joinField(name, team) }) }
+        }, Modifier.fillMaxSize().padding(pad))
+        else Box(Modifier.fillMaxSize().padding(pad)) {
+            // Keep the native map and its tiles alive while visiting Stops/Records.
+            StudentRouteMap(cps, own, "student-${session!!.id}", tab == 0)
+            when (tab) {
+                0 -> GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)) {
+                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Icon(if (sharing) Icons.Default.GpsFixed else Icons.Default.GpsOff, null, tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(12.dp))
+                            Column(Modifier.weight(1f)) {
+                                Text(when {
+                                    hasEnd -> "Transport completed"
+                                    timing.finishedAt > 0 -> "Ending conditions needed"
+                                    sharing && serviceState == TrackingState.PAUSED -> "Sharing paused"
+                                    sharing -> "Sharing location"
+                                    !session!!.isActive -> "Session completed"
+                                    else -> "Ready when you are"
+                                }, style = MaterialTheme.typography.titleMedium)
+                                LocationFreshness(own)
                             }
-                            Text(if(bvm.connectionState.value==ConnectionState.CONNECTED) "Connected" else "Reconnecting",style=MaterialTheme.typography.labelSmall)
+                            Text(if (bvm.connectionState.value == ConnectionState.CONNECTED) "Connected" else "Reconnecting", style = MaterialTheme.typography.labelSmall)
                         }
-                        if(session!!.isActive) Row(horizontalArrangement=Arrangement.spacedBy(10.dp)) {
-                            if(!sharing) Button(onClick={if(DeviceLocation.hasPermission(context)) start() else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},modifier=Modifier.fillMaxWidth()){Text("Start sharing")}
-                            else {
-                                FilledTonalButton(onClick={context.startService(Intent(context,LocationTrackingService::class.java).setAction(if(serviceState==TrackingState.PAUSED) LocationTrackingService.ACTION_RESUME else LocationTrackingService.ACTION_PAUSE))},modifier=Modifier.weight(1f)){Text(if(serviceState==TrackingState.PAUSED) "Resume" else "Pause")}
-                                OutlinedButton(onClick={context.startService(Intent(context,LocationTrackingService::class.java).setAction(LocationTrackingService.ACTION_FINISH))},modifier=Modifier.weight(1f)){Text("Finish")}
+                        JourneyTimer(timing, store.bootCount())
+                        when {
+                            hasEnd -> Text("Starting and ending conditions recorded.", style = MaterialTheme.typography.bodySmall)
+                            timing.finishedAt > 0 && hasStart -> Button(onClick = ::finish, enabled = cps.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Record ending conditions") }
+                            session!!.isActive && !sharing -> Button(onClick = {
+                                if (DeviceLocation.hasPermission(context)) start() else permission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.ACCESS_COARSE_LOCATION))
+                            }, enabled = cps.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text(if (hasStart) "Resume sharing" else "Start sharing") }
+                            sharing -> Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                                FilledTonalButton(onClick = { context.startService(Intent(context, LocationTrackingService::class.java).setAction(
+                                    if (serviceState == TrackingState.PAUSED) LocationTrackingService.ACTION_RESUME else LocationTrackingService.ACTION_PAUSE)) }, modifier = Modifier.weight(1f)) { Text(if (serviceState == TrackingState.PAUSED) "Resume" else "Pause") }
+                                OutlinedButton(onClick = ::finish, modifier = Modifier.weight(1f)) { Text("Finish") }
                             }
                         }
-                        error?.let{Text(it,color=MaterialTheme.colorScheme.error,style=MaterialTheme.typography.bodySmall)}
+                        if (!hasStart && cps.isNotEmpty()) Text("Record transport conditions at departure and arrival only.", style = MaterialTheme.typography.bodySmall)
+                        if (cps.isEmpty()) Text("Your lecturer has not added the route yet.", style = MaterialTheme.typography.bodySmall)
+                        error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
+                    }
+                }
+                1 -> Surface(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { Text("The route", style = MaterialTheme.typography.headlineLarge); Text("${cps.size} checkpoints · conditions at start and end", color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                        if (cps.isEmpty()) item { Text("Your lecturer has not added checkpoints yet.") }
+                        items(cps, key = { it.id }) { cp -> GlassCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                                Text("${cp.orderIndex}. ${cp.name}", style = MaterialTheme.typography.titleLarge)
+                                Text(cp.instructions.ifBlank { "Follow this stop on the lecturer’s route." }, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(when (cp.id) {
+                                    cps.first().id -> if (cps.size == 1) "Departure and arrival · transport conditions" else "Departure · starting conditions"
+                                    cps.last().id -> "Arrival · ending conditions"
+                                    else -> "Route stop · no transport form needed"
+                                }, style = MaterialTheme.typography.labelMedium)
+                                Text("Arrival radius ${cp.radiusMeters.toInt()} m", style = MaterialTheme.typography.labelMedium)
+                            }
+                        } }
+                    }
+                }
+                else -> Surface(Modifier.fillMaxSize()) {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        item { Text("Your records", style = MaterialTheme.typography.headlineLarge); TextButton(onClick = { vm.retryUploads() }) { Text("Retry uploads") } }
+                        if (records.isEmpty() && remoteRecords.isEmpty()) item { Text("Starting and ending transport records will appear here.") }
+                        items(records, key = { it.id }) { record -> GlassCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(TransportJourney.phase(record.id, record.sessionId, record.userId)?.label
+                                    ?: cps.firstOrNull { it.id == record.checkpointId }?.name ?: "Checkpoint", style = MaterialTheme.typography.titleMedium)
+                                Text("${record.temperatureC ?: "—"} °C · ${record.weightKg ?: "—"} kg · ${record.condition.name.lowercase()}")
+                                Text(if (record.syncState == SyncState.SYNCED) "Uploaded" else if (record.syncState == SyncState.FAILED) "Upload needs attention" else "Upload queued", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                                record.uploadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+                                record.exceptionReason?.let { Text("Flagged: $it", color = MaterialTheme.colorScheme.tertiary) }
+                                if (record.notes.isNotBlank()) Text(record.notes)
+                            }
+                        } }
+                        items(remoteRecords.filter { remote -> records.none { it.id == remote.id } }, key = { it.id.orEmpty() }) { record -> GlassCard(Modifier.fillMaxWidth()) {
+                            Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                                Text(TransportJourney.phase(record.id, record.sessionId, record.userId)?.label ?: record.checkpointName, style = MaterialTheme.typography.titleMedium)
+                                Text("${record.temperatureC ?: "—"} °C · ${record.weightKg ?: "—"} kg · ${record.condition.orEmpty().lowercase()}")
+                                Text("Uploaded", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
+                                record.exceptionReason?.let { Text("Flagged: $it", color = MaterialTheme.colorScheme.tertiary) }
+                            }
+                        } }
                     }
                 }
             }
-            1 -> LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item{Text("The route",style=MaterialTheme.typography.headlineLarge);Text("${cps.size} checkpoints",color=MaterialTheme.colorScheme.onSurfaceVariant)}
-                if(cps.isEmpty()) item{Text("Your lecturer has not added checkpoints yet.")}
-                items(cps,key={it.id}) {cp -> GlassCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(10.dp)) {
-                    Text("${cp.orderIndex}. ${cp.name}",style=MaterialTheme.typography.titleLarge)
-                    Text(cp.instructions.ifBlank{"Record conditions when you arrive."},color=MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text("Arrival radius ${cp.radiusMeters.toInt()} m",style=MaterialTheme.typography.labelMedium)
-                    Button(onClick={onCheckIn(cp.id)},enabled=session!!.isActive){Icon(Icons.Default.AddAPhoto,null);Text("  Check in")}
-                }} }
+        }
+    }
+}
+
+/** Only this leaf recomposes each second; map overlays and route requests stay unchanged. */
+@Composable
+private fun JourneyTimer(timing: JourneyTiming, bootCount: Int) {
+    var elapsed by remember(timing) { mutableLongStateOf(timing.elapsed(System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(), bootCount)) }
+    LaunchedEffect(timing) {
+        while (timing.running) {
+            elapsed = timing.elapsed(System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(), bootCount)
+            delay(1000)
+        }
+    }
+    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text("Journey time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(JourneyTiming.format(elapsed), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+    }
+}
+
+@Composable
+private fun LocationFreshness(own: LocationEntity?) {
+    var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(own?.recordedAt) { while (own != null) { now = System.currentTimeMillis(); delay(5000) } }
+    Text(own?.let { "±${it.accuracyMeters.toInt()} m · ${((now - it.recordedAt).coerceAtLeast(0) / 1000)}s ago" }
+        ?: "Waiting for a location fix", style = MaterialTheme.typography.bodySmall)
+}
+
+@Composable
+private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEntity?, viewportKey: String, active: Boolean) {
+    if (checkpoints.isEmpty()) {
+        if (active) Surface(Modifier.fillMaxSize()) {
+            Box(Modifier.fillMaxSize().padding(bottom = 240.dp), contentAlignment = Alignment.Center) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Icon(Icons.Default.Route, null, Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary)
+                    Text("Waiting for the lecturer’s route", style = MaterialTheme.typography.titleMedium)
+                    Text("Pins appear automatically when the route is ready.", style = MaterialTheme.typography.bodySmall)
+                }
             }
-            else -> LazyColumn(Modifier.fillMaxSize().padding(pad),contentPadding=PaddingValues(20.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {
-                item {Text("Your records",style=MaterialTheme.typography.headlineLarge);TextButton(onClick={vm.retryUploads()}){Text("Retry uploads")}}
-                if(records.isEmpty()) item{Text("Your check-ins will appear here.")}
-                items(records,key={it.id}) {record -> GlassCard(Modifier.fillMaxWidth()) {Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
-                    Text(cps.firstOrNull{it.id==record.checkpointId}?.name ?: "Checkpoint",style=MaterialTheme.typography.titleMedium)
-                    Text("${record.temperatureC ?: "—"} °C · ${record.weightKg ?: "—"} kg · ${record.condition.name.lowercase()}")
-                    Text(if(record.syncState==SyncState.SYNCED) "Uploaded" else if(record.syncState==SyncState.FAILED) "Upload needs attention" else "Upload queued",color=MaterialTheme.colorScheme.primary,style=MaterialTheme.typography.labelMedium)
-                    record.uploadError?.let{Text(it,color=MaterialTheme.colorScheme.error)}
-                    record.exceptionReason?.let{Text("Flagged: $it",color=MaterialTheme.colorScheme.tertiary)}
-                    if(record.notes.isNotBlank()) Text(record.notes)
-                }} }
+        }
+        return
+    }
+    val context = LocalContext.current
+    val points = remember(checkpoints) { com.ppp62.livetracking.util.RoutePlanner.coordinates(checkpoints) }
+    var retry by remember { mutableIntStateOf(0) }; var overview by remember { mutableIntStateOf(0) }
+    var routing by remember(points, retry) { mutableStateOf(points.size > 1) }
+    var target by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }
+    val location = remember(own?.latitude, own?.longitude) { own?.let { GeoPoint(it.latitude, it.longitude) } }
+    val route by produceState(com.ppp62.livetracking.util.RoutePlanner.direct(points), points, retry) {
+        value = com.ppp62.livetracking.util.RoutePlanner.direct(points)
+        try { value = com.ppp62.livetracking.util.RoutePlanner.load(context, points, retry > 0) }
+        finally { routing = false }
+    }
+    Box(Modifier.fillMaxSize()) {
+        OsmMap(Modifier.fillMaxSize(), checkpoints, myLocation = location, target = target, viewportKey = viewportKey,
+            showRadius = false, routePoints = route.points, roadRoute = route.road, fitCheckpoints = true,
+            routeOverviewRequest = overview, active = active, layersTopPadding = 124.dp, attributionBottomPadding = 235.dp)
+        if (active) {
+            MapExploreControls({ target = it }, Modifier.align(Alignment.TopEnd).padding(12.dp))
+            if (checkpoints.isNotEmpty()) MapControlButton(Icons.Default.Route, "Show lecturer route", { overview++ },
+                Modifier.align(Alignment.TopEnd).padding(top = 180.dp, end = 12.dp))
+            if (points.size > 1) Surface(Modifier.align(Alignment.TopStart).padding(12.dp).widthIn(max = 210.dp), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)) {
+                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+                    Text(if (route.road) "Road route" else "Pin-to-pin path", style = MaterialTheme.typography.labelLarge)
+                    Text(String.format(java.util.Locale.ROOT, "%.1f km · %d stops", route.distanceMeters / 1000, checkpoints.size), style = MaterialTheme.typography.bodySmall)
+                    if (routing) Text("Finding road route…", style = MaterialTheme.typography.labelSmall)
+                    else if (!route.road) TextButton(onClick = { retry++ }, contentPadding = PaddingValues(0.dp)) { Text("Retry road route") }
+                }
             }
         }
     }
