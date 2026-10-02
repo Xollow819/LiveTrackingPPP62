@@ -6,6 +6,8 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,6 +29,7 @@ import com.ppp62.livetracking.ui.*
 import com.ppp62.livetracking.ui.components.*
 import com.ppp62.livetracking.service.LocationTrackingService
 import com.ppp62.livetracking.util.DeviceLocation
+import com.ppp62.livetracking.data.remote.LivePositionRow
 import org.osmdroid.util.GeoPoint
 import kotlinx.coroutines.delay
 
@@ -45,6 +48,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
     val remoteRecords = remember(onlineRecords, userId, session?.id) { onlineRecords.filter { it.userId == userId && it.sessionId == session?.id } }
     val serviceState by LocationTrackingService.state.collectAsState()
     val serviceIdentity by LocationTrackingService.identity.collectAsState()
+    val onlinePositions by bvm.positions.collectAsState()
     val store = remember(context) { JourneyStore(context) }
     val timingFlow = remember(session?.id, userId) { store.observe(session?.id.orEmpty(), userId.orEmpty()) }
     val timing by timingFlow.collectAsState(initial = store.load(session?.id.orEmpty(), userId.orEmpty()))
@@ -59,6 +63,17 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
     val own = locations.firstOrNull { it.participantId == userId && it.sessionId == session?.id }
     val serviceMatches = serviceIdentity == (session?.id to userId)
     val sharing = serviceMatches && serviceState != TrackingState.FINISHED
+    val markerPrefs = remember(context) { context.getSharedPreferences("participant_markers", android.content.Context.MODE_PRIVATE) }
+    var markerType by remember(session?.id, userId) {
+        mutableStateOf(if (session != null && userId != null) markerPrefs.getString(ParticipantMarkers.preferenceKey(session!!.id, userId!!), ParticipantMarkers.default) ?: ParticipantMarkers.default else ParticipantMarkers.default)
+    }
+    val mapParticipants = remember(onlinePositions, own, session?.id, userId) {
+        val remote = onlinePositions.filter { it.sessionId == session?.id }.map { it.toLocationEntity() }
+        if (userId != null && remote.none { it.participantId == userId } && own != null) remote + own else remote
+    }
+    val markerTypes = remember(onlinePositions, markerType, userId) {
+        onlinePositions.associate { it.userId to it.markerType } + listOfNotNull(userId?.let { it to markerType })
+    }
     fun hasRecord(phase: TransportPhase): Boolean {
         val id = TransportJourney.recordId(session?.id.orEmpty(), userId.orEmpty(), phase)
         return id in savedTransportRecords || records.any { it.id == id } || remoteRecords.any { it.id == id }
@@ -102,7 +117,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
         }, Modifier.fillMaxSize().padding(pad))
         else Box(Modifier.fillMaxSize().padding(pad)) {
             // Keep the native map and its tiles alive while visiting Stops/Records.
-            StudentRouteMap(cps, own, "student-${session!!.id}", tab == 0, navigationHeight + 4.dp)
+            StudentRouteMap(cps, mapParticipants, markerTypes, "student-${session!!.id}", tab == 0, navigationHeight + 4.dp)
             when (tab) {
                 0 -> GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
                     .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = navigationHeight + 56.dp), translucent = true) {
@@ -124,6 +139,27 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                             Text(if (bvm.connectionState.value == ConnectionState.CONNECTED) "Connected" else "Reconnecting", style = MaterialTheme.typography.labelSmall)
                         }
                         JourneyTimer(timing, store.bootCount())
+                        Text("${mapParticipants.count { it.participantId != userId && it.trackingState == TrackingState.LIVE && System.currentTimeMillis() - it.recordedAt < 90_000 }} other students visible", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Your map marker", style = MaterialTheme.typography.labelMedium)
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            ParticipantMarkers.options.forEach { option ->
+                                FilterChip(selected = markerType == option.id, onClick = {
+                                    markerType = option.id
+                                    val currentSession = session
+                                    val currentUser = userId
+                                    if (currentSession != null && currentUser != null) {
+                                        markerPrefs.edit().putString(ParticipantMarkers.preferenceKey(currentSession.id, currentUser), option.id).apply()
+                                        if (serviceMatches) context.startService(Intent(context, LocationTrackingService::class.java)
+                                            .setAction(LocationTrackingService.ACTION_SET_MARKER)
+                                            .putExtra(LocationTrackingService.EXTRA_SESSION, currentSession.id)
+                                            .putExtra(LocationTrackingService.EXTRA_USER, currentUser)
+                                            .putExtra(LocationTrackingService.EXTRA_NAME, profile.name)
+                                            .putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
+                                            .putExtra(LocationTrackingService.EXTRA_MARKER_TYPE, option.id))
+                                    }
+                                }, label = { Text("${option.emoji} ${option.label}", maxLines = 1) })
+                            }
+                        }
                         when {
                             hasEnd -> Text("Starting and ending conditions recorded.", style = MaterialTheme.typography.bodySmall)
                             timing.finishedAt > 0 && hasStart -> Button(onClick = ::finish, enabled = cps.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Record ending conditions") }
@@ -141,7 +177,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                         error?.let { Text(it, color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.bodySmall) }
                     }
                 }
-                1 -> Surface(Modifier.fillMaxSize()) {
+                1 -> Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)) {
                     LazyColumn(Modifier.fillMaxSize().padding(top = 72.dp, bottom = navigationHeight), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item { Text("The route", style = MaterialTheme.typography.headlineLarge); Text("${cps.size} checkpoints · conditions at start and end", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         if (cps.isEmpty()) item { Text("Your lecturer has not added checkpoints yet.") }
@@ -159,7 +195,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                         } }
                     }
                 }
-                else -> Surface(Modifier.fillMaxSize()) {
+                else -> Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.surface.copy(alpha = .78f)) {
                     LazyColumn(Modifier.fillMaxSize().padding(top = 72.dp, bottom = navigationHeight), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item { Text("Your records", style = MaterialTheme.typography.headlineLarge); TextButton(onClick = { vm.retryUploads() }) { Text("Retry uploads") } }
                         if (records.isEmpty() && remoteRecords.isEmpty()) item { Text("Starting and ending transport records will appear here.") }
@@ -219,6 +255,24 @@ private fun JourneyTimer(timing: JourneyTiming, bootCount: Int) {
     }
 }
 
+private fun LivePositionRow.toLocationEntity(): LocationEntity {
+    val timestamp = runCatching { java.time.OffsetDateTime.parse(recordedAt).toInstant().toEpochMilli() }.getOrDefault(0L)
+    return LocationEntity(
+        participantId = userId,
+        sessionId = sessionId,
+        participantName = displayName.ifBlank { "Student" },
+        team = team,
+        latitude = lat,
+        longitude = lng,
+        accuracyMeters = (accuracy ?: 0.0).toFloat(),
+        speedMps = 0f,
+        heading = 0f,
+        recordedAt = timestamp,
+        trackingState = runCatching { TrackingState.valueOf(trackingState) }.getOrDefault(TrackingState.STALE),
+        batteryPercent = 0
+    )
+}
+
 @Composable
 private fun LocationFreshness(own: LocationEntity?) {
     var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
@@ -228,7 +282,7 @@ private fun LocationFreshness(own: LocationEntity?) {
 }
 
 @Composable
-private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEntity?, viewportKey: String, active: Boolean, attributionBottomPadding: androidx.compose.ui.unit.Dp) {
+private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, participants: List<LocationEntity>, markerTypes: Map<String, String>, viewportKey: String, active: Boolean, attributionBottomPadding: androidx.compose.ui.unit.Dp) {
     if (checkpoints.isEmpty()) {
         if (active) Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().padding(bottom = 240.dp), contentAlignment = Alignment.Center) {
@@ -246,14 +300,13 @@ private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEn
     var retry by remember { mutableIntStateOf(0) }; var overview by remember { mutableIntStateOf(0) }
     var routing by remember(points, retry) { mutableStateOf(points.size > 1) }
     var target by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }
-    val location = remember(own?.latitude, own?.longitude) { own?.let { GeoPoint(it.latitude, it.longitude) } }
     val route by produceState(com.ppp62.livetracking.util.RoutePlanner.direct(points), points, retry) {
         value = com.ppp62.livetracking.util.RoutePlanner.direct(points)
         try { value = com.ppp62.livetracking.util.RoutePlanner.load(context, points, retry > 0) }
         finally { routing = false }
     }
     Box(Modifier.fillMaxSize()) {
-        OsmMap(Modifier.fillMaxSize(), checkpoints, myLocation = location, target = target, viewportKey = viewportKey,
+        OsmMap(Modifier.fillMaxSize(), checkpoints, participants = participants, markerTypes = markerTypes, target = target, viewportKey = viewportKey,
             showRadius = false, routePoints = route.points, roadRoute = route.road, fitCheckpoints = true,
             routeOverviewRequest = overview, active = active, layersTopPadding = 184.dp, attributionBottomPadding = attributionBottomPadding)
         if (active) {
@@ -291,7 +344,7 @@ private fun JoinForm(
     Column(modifier.imePadding().verticalScroll(androidx.compose.foundation.rememberScrollState()).padding(22.dp), verticalArrangement = Arrangement.spacedBy(16.dp)) {
         Spacer(Modifier.height(20.dp))
         Text("Join your field session", style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
-        Text("Enter the details shared by your lecturer to open the route and start recording your practical.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
+        Text("Enter the details shared by your lecturer to open the route and start recording your practical. When you start sharing, your live location and map marker are visible to your lecturer and other students in this session.", color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyLarge)
         GlassCard(shape = RoundedCornerShape(24.dp)) {
             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         OutlinedTextField(code, onCode, label = { Text("Session code") }, placeholder = { Text("e.g. KX7Q2P") }, singleLine = true, modifier = Modifier.fillMaxWidth(), leadingIcon = { Icon(Icons.Default.Key, null) })

@@ -158,10 +158,14 @@ class SupabaseBackend(private val config: BackendConfig) {
     // ------------------------------------------------------------------ positions
 
     /** Publishes the student's latest position (upsert keyed on session+user). */
-    suspend fun publishPosition(sessionId: String, userId: String, displayName: String, lat: Double, lng: Double, accuracy: Double?, recordedAt: Long = System.currentTimeMillis(), team: String = "", state: String = "LIVE", eventAt:Long=System.currentTimeMillis()) {
+    suspend fun publishPosition(sessionId: String, userId: String, displayName: String, lat: Double, lng: Double, accuracy: Double?, recordedAt: Long = System.currentTimeMillis(), team: String = "", state: String = "LIVE", eventAt:Long=System.currentTimeMillis(), markerType: String = "motorcycle") {
         val c = client() ?: error("Backend not configured")
-        c.from("live_positions").upsert(LivePositionRow(sessionId, userId, displayName, lat, lng, accuracy,
-            team, state, java.time.Instant.ofEpochMilli(recordedAt).toString(),eventAt=java.time.Instant.ofEpochMilli(eventAt).toString())) { onConflict = "session_id,user_id" }
+        c.from("live_positions").upsert(LivePositionRow(
+            sessionId = sessionId, userId = userId, displayName = displayName, lat = lat, lng = lng,
+            accuracy = accuracy, team = team, trackingState = state, markerType = markerType,
+            recordedAt = java.time.Instant.ofEpochMilli(recordedAt).toString(),
+            eventAt = java.time.Instant.ofEpochMilli(eventAt).toString()
+        )) { onConflict = "session_id,user_id" }
     }
     suspend fun loadPositions(sessionId: String): List<LivePositionRow> = requireNotNull(client()).from("live_positions").select {
         filter { eq("session_id", sessionId) }

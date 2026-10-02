@@ -75,4 +75,5 @@ data class LocationEntity(
 
 @Entity(tableName="position_outbox", primaryKeys=["sessionId","userId"])
 data class PositionOutboxEntity(val sessionId:String,val userId:String,val displayName:String,val team:String,
-    val latitude:Double,val longitude:Double,val accuracy:Double,val recordedAt:Long,val trackingState:String,val eventAt:Long)
+    val latitude:Double,val longitude:Double,val accuracy:Double,val recordedAt:Long,val trackingState:String,val eventAt:Long,
+    val markerType:String = ParticipantMarkers.default)

@@ -17,4 +17,9 @@ object DatabaseMigrations {
             db.execSQL("ALTER TABLE locations_new RENAME TO locations")
         }
     }
+    val FROM_2_TO_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE position_outbox ADD COLUMN markerType TEXT NOT NULL DEFAULT 'motorcycle'")
+        }
+    }
 }

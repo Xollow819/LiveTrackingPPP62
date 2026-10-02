@@ -24,7 +24,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
             if(row.userId!=uid) continue
             try {
                 val session=app.backend.findSessionById(row.sessionId)
-                if(session!=null && session.isActive) app.backend.publishPosition(row.sessionId,row.userId,row.displayName,row.latitude,row.longitude,row.accuracy,row.recordedAt,row.team,row.trackingState,row.eventAt)
+                if(session!=null && session.isActive) app.backend.publishPosition(row.sessionId,row.userId,row.displayName,row.latitude,row.longitude,row.accuracy,row.recordedAt,row.team,row.trackingState,row.eventAt,row.markerType)
                 else if(session==null) error("Session unavailable")
                 app.database.dao().acknowledgePosition(row.sessionId,row.userId,row.eventAt)
             } catch(e:CancellationException){throw e} catch(_:Exception){failed=true}

@@ -37,6 +37,7 @@ data class LivePositionRow(
     val accuracy: Double? = null,
     val team: String = "",
     @SerialName("tracking_state") val trackingState: String = "LIVE",
+    @SerialName("marker_type") val markerType: String = "motorcycle",
     @SerialName("recorded_at") val recordedAt: String? = null,
     @SerialName("updated_at") val updatedAt: String? = null,
     @SerialName("event_at") val eventAt: String? = null

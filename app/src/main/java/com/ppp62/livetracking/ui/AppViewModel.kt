@@ -51,10 +51,13 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startSharing(sessionId: String, userId: String) {
         val app = getApplication<PPP62Application>()
+        val marker = app.getSharedPreferences("participant_markers", android.content.Context.MODE_PRIVATE)
+            .getString(ParticipantMarkers.preferenceKey(sessionId, userId), ParticipantMarkers.default) ?: ParticipantMarkers.default
         try {
             ContextCompat.startForegroundService(app, Intent(app, LocationTrackingService::class.java)
                 .putExtra(LocationTrackingService.EXTRA_SESSION, sessionId).putExtra(LocationTrackingService.EXTRA_USER, userId)
-                .putExtra(LocationTrackingService.EXTRA_NAME, profile.value.name).putExtra(LocationTrackingService.EXTRA_TEAM, profile.value.team))
+                .putExtra(LocationTrackingService.EXTRA_NAME, profile.value.name).putExtra(LocationTrackingService.EXTRA_TEAM, profile.value.team)
+                .putExtra(LocationTrackingService.EXTRA_MARKER_TYPE, ParticipantMarkers.get(marker).id))
         } catch (e: Exception) { message.value = UserFacingErrors.message(e, "Unable to start sharing. Check location permissions.") }
     }
     fun finishSharing(sessionId: String, userId: String) {

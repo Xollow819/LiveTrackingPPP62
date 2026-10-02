@@ -53,6 +53,6 @@ interface PPPDao {
     @Query("UPDATE locations SET trackingState = :state WHERE participantId = :participantId AND sessionId = :sessionId") suspend fun setTrackingState(participantId: String, state: TrackingState, sessionId: String)
 }
 
-@Database(entities = [SessionEntity::class, CheckpointEntity::class, CheckInEntity::class, LocationEntity::class, PositionOutboxEntity::class], version = 2, exportSchema = true)
+@Database(entities = [SessionEntity::class, CheckpointEntity::class, CheckInEntity::class, LocationEntity::class, PositionOutboxEntity::class], version = 3, exportSchema = true)
 @TypeConverters(DbConverters::class)
 abstract class AppDatabase : RoomDatabase() { abstract fun dao(): PPPDao }

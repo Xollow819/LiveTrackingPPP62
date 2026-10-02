@@ -4,7 +4,7 @@ The app uses Supabase as its shared source of truth. Room caches the active rout
 
 ## Existing projects
 
-Back up the database and evidence bucket before upgrading. Run `migrations/20261002_secure_sessions.sql` in the project's SQL editor. It adds account ownership, checkpoint instructions/requirements, private evidence policies and transactional app functions. It clears legacy plaintext PINs without deleting records.
+Back up the database and evidence bucket before upgrading. Run `migrations/20261002_secure_sessions.sql`, then `migrations/20261002_team_live_tracking.sql` in the project's SQL editor. The first adds account ownership, checkpoint instructions/requirements, private evidence policies and transactional app functions. The second lets members of an active session read live positions across teams and adds validated vehicle/animal marker types. It does not expose positions to outsiders or after the session closes.
 
 Legacy sessions have no verified account owner. They remain read-only and unavailable to new joins until an administrator explicitly associates `tracking_sessions.owner_id` with the correct lecturer's confirmed `auth.users.id`. Do not assign every legacy session to the first account that signs in. Review legacy memberships before restoring access; the old schema allowed self-assigned membership. Existing legacy public photo links stop working after the bucket becomes private; the app uses authenticated downloads.
 
@@ -23,7 +23,7 @@ SUPABASE_ANON_KEY=your-public-client-key
 
 Never bundle a service-role key. Release assembly rejects missing configuration. Debug builds without configuration display an honest unavailable state and can be used to review the interface.
 
-Realtime publication includes tracking_sessions, session_participants, checkpoints, live_positions and submissions. The app reloads snapshots every 15 seconds as reconnect recovery. Evidence goes into the private `evidence` bucket, at `session/user/submission.jpg`, compressed as JPEG. Stable submission UUIDs make retries idempotent.
+Realtime publication includes tracking_sessions, session_participants, checkpoints, live_positions and submissions. Students can see every participant's latest position while the session is active. Each student chooses a map marker that is shared with the session. The app reloads snapshots every 15 seconds as reconnect recovery. Evidence goes into the private `evidence` bucket, at `session/user/submission.jpg`, compressed as JPEG. Stable submission UUIDs make retries idempotent.
 
 ## Live acceptance
 

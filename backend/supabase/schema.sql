@@ -39,6 +39,7 @@ create table if not exists public.live_positions (
   lat          double precision not null,
   lng          double precision not null,
   accuracy     double precision,
+  marker_type  text not null default 'motorcycle' check (marker_type in ('motorcycle','car','horse','bicycle','bus','walking')),
   recorded_at  timestamptz not null default now(),
   updated_at   timestamptz not null default now(),
   primary key (session_id, user_id)
@@ -73,7 +74,7 @@ create table if not exists public.checkpoints (
 );
 
 -- ----------------------------------------------------------------------------
--- 2. Realtime: broadcast row changes so the lecturer map updates live
+-- 2. Realtime: broadcast position changes so lecturer and student maps update live
 -- ----------------------------------------------------------------------------
 do $$
 begin
@@ -119,6 +120,12 @@ alter table public.session_participants add column if not exists team text not n
 alter table public.live_positions add column if not exists event_at timestamptz not null default now();
 alter table public.live_positions add column if not exists team text not null default '';
 alter table public.live_positions add column if not exists tracking_state text not null default 'LIVE';
+alter table public.live_positions add column if not exists marker_type text not null default 'motorcycle';
+do $$ begin
+ if not exists(select 1 from pg_constraint where conrelid='public.live_positions'::regclass and conname='live_positions_marker_type_check') then
+  alter table public.live_positions add constraint live_positions_marker_type_check check(marker_type in ('motorcycle','car','horse','bicycle','bus','walking'));
+ end if;
+end $$;
 alter table public.checkpoints add column if not exists order_index integer not null default 0;
 alter table public.checkpoints add column if not exists instructions text not null default '';
 alter table public.checkpoints add column if not exists requires_photo boolean not null default true;
@@ -147,7 +154,7 @@ do $$ declare p record; begin
 end $$;
 create policy sessions_read on public.tracking_sessions for select to authenticated using(public.is_field_member(id));
 create policy participants_read on public.session_participants for select to authenticated using(public.owns_field_session(session_id) or user_id=auth.uid());
-create policy positions_read on public.live_positions for select to authenticated using(public.owns_field_session(session_id) or user_id=auth.uid());
+create policy positions_read on public.live_positions for select to authenticated using(public.owns_field_session(session_id) or public.active_field_member(session_id));
 create policy positions_insert on public.live_positions for insert to authenticated with check(user_id=auth.uid() and public.active_field_member(session_id));
 create policy positions_update on public.live_positions for update to authenticated using(user_id=auth.uid() and public.active_field_member(session_id)) with check(user_id=auth.uid() and public.active_field_member(session_id));
 create policy checkpoints_read on public.checkpoints for select to authenticated using(public.is_field_member(session_id));

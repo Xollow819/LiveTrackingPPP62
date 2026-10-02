@@ -83,13 +83,14 @@ private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()
     LaunchedEffect(Unit){while(true){now=System.currentTimeMillis();kotlinx.coroutines.delay(5000)}}
     val active=session ?: return
     val people=positions.map{it.toEntity(active.id)}
+    val markerTypes=positions.associate{it.userId to it.markerType}
     val checkpoints=cps.mapIndexed{i,cp->cp.toEntity(i)}
     val live=people.count{now-it.recordedAt<90_000&&it.trackingState==TrackingState.LIVE}
     Scaffold(contentWindowInsets = WindowInsets.systemBars.exclude(WindowInsets.statusBars)) {pad->
         Box(Modifier.fillMaxSize().padding(pad)) {
             when(tab){
                 0->Box(Modifier.fillMaxSize()){
-                    OsmMap(Modifier.fillMaxSize(),checkpoints,people,target=target,viewportKey="lecturer-${active.id}",layersTopPadding=184.dp,attributionBottomPadding=navigationHeight+4.dp,onMapTap=if(adding) { point ->
+                    OsmMap(Modifier.fillMaxSize(),checkpoints,people,markerTypes=markerTypes,target=target,viewportKey="lecturer-${active.id}",layersTopPadding=184.dp,attributionBottomPadding=navigationHeight+4.dp,onMapTap=if(adding) { point ->
                         editing=com.ppp62.livetracking.data.remote.CheckpointRow(id=java.util.UUID.randomUUID().toString(),sessionId=active.id,name="",lat=point.latitude,lng=point.longitude,orderIndex=(cps.maxOfOrNull{it.orderIndex} ?: 0)+1);adding=false
                     } else null)
                     if(active.isActive && !adding) MapControlButton(Icons.Default.Route,"Edit route",{routeOpen=true},Modifier.align(Alignment.TopStart).padding(start=12.dp,top=72.dp))
@@ -108,9 +109,10 @@ private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()
                     if(roster.none{it.role=="student"}) item{Text("Share ${active.code} to invite your students.")}
                     items(roster.filter{it.role=="student"},key={it.userId}){student->
                         val location=people.firstOrNull{it.participantId==student.userId}
+                        val marker=ParticipantMarkers.get(positions.firstOrNull{it.userId==student.userId}?.markerType.orEmpty())
                         val status=if(location==null) "Not sharing" else if(location.trackingState!=TrackingState.LIVE) location.trackingState.name.lowercase().replaceFirstChar{it.uppercase()} else if(now-location.recordedAt>=90_000) "Last location is stale" else "Live · ±${location.accuracyMeters.toInt()} m"
                         GlassCard(Modifier.fillMaxWidth(),onClick={location?.let{target=GeoPoint(it.latitude,it.longitude);tab=0}}){Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(6.dp)){
-                            Text(student.displayName,style=MaterialTheme.typography.titleLarge);Text(student.team);Text(status,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
+                            Text(student.displayName,style=MaterialTheme.typography.titleLarge);Text(student.team);Text("${marker.emoji} ${marker.label}",style=MaterialTheme.typography.labelMedium);Text(status,style=MaterialTheme.typography.labelMedium,color=MaterialTheme.colorScheme.primary)
                         }}
                     }
                     if(alerts.isNotEmpty()) item{Text("Field activity",style=MaterialTheme.typography.titleLarge)}

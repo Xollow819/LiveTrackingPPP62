@@ -55,6 +55,7 @@ fun OsmMap(
     modifier: Modifier = Modifier,
     checkpoints: List<CheckpointEntity> = emptyList(),
     participants: List<LocationEntity> = emptyList(),
+    markerTypes: Map<String, String> = emptyMap(),
     myLocation: GeoPoint? = null,
     target: GeoPoint? = null,
     targetZoom: Double = 15.0,
@@ -94,8 +95,13 @@ fun OsmMap(
     val checkpointIcons = remember(checkpoints.map { it.id to it.orderIndex }, context) {
         checkpoints.associate { it.id to mapPin(context, AndroidColor.parseColor("#0B756F"), it.orderIndex.toString()) }
     }
-    val liveIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#0A84FF"), "") }
-    val staleIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#A66600"), "") }
+    val participantIcons = remember(participants.map { listOf(it.participantId, it.team, markerTypes[it.participantId].orEmpty()) }, context) {
+        participants.associate { person ->
+            val colors = intArrayOf(0xFF197C79.toInt(), 0xFF4267A8.toInt(), 0xFFAF6B35.toInt(), 0xFF72589A.toInt(), 0xFF4D7B4A.toInt(), 0xFFB04F66.toInt())
+            val teamColor = colors[(person.team.hashCode() and Int.MAX_VALUE) % colors.size]
+            person.participantId to participantPin(context, teamColor, ParticipantMarkers.get(markerTypes[person.participantId].orEmpty()).emoji)
+        }
+    }
     val map = remember(context, viewportKey) {
         MapView(context).apply {
             // Compose owns final cleanup; temporary View detaches must not destroy the tile provider.
@@ -249,7 +255,7 @@ fun OsmMap(
             markerOverlays.add(Marker(map).apply {
                 position = GeoPoint(p.latitude, p.longitude)
                 title = p.participantName
-                icon = if (status == "LIVE") liveIcon else staleIcon
+                icon = participantIcons[p.participantId]
                 snippet = "${p.team} • $status • Battery ${p.batteryPercent}%"
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             })
@@ -372,5 +378,26 @@ private fun mapPin(context: Context, color: Int, label: String): BitmapDrawable 
     paint.style = Paint.Style.FILL; paint.textAlign = Paint.Align.CENTER; paint.textSize = 13f; paint.isFakeBoldText = true
     if (label.isBlank()) canvas.drawCircle(20f, 19f, 5f, paint)
     else canvas.drawText(label, 20f, 19f - (paint.ascent() + paint.descent()) / 2f, paint)
+    return BitmapDrawable(context.resources, bitmap)
+}
+
+/** Emoji vehicle/animal pins use a stable team color, so teams stay distinct at a glance. */
+private fun participantPin(context: Context, color: Int, emoji: String): BitmapDrawable {
+    val density = context.resources.displayMetrics.density
+    val bitmap = Bitmap.createBitmap((48 * density).toInt(), (56 * density).toInt(), Bitmap.Config.ARGB_8888)
+    val canvas = Canvas(bitmap).apply { scale(density, density) }
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    paint.color = color
+    canvas.drawCircle(24f, 24f, 20f, paint)
+    paint.color = AndroidColor.WHITE
+    paint.style = Paint.Style.STROKE
+    paint.strokeWidth = 2.5f
+    canvas.drawCircle(24f, 24f, 20f, paint)
+    paint.style = Paint.Style.FILL
+    paint.textAlign = Paint.Align.CENTER
+    paint.textSize = 22f
+    paint.typeface = android.graphics.Typeface.DEFAULT
+    val font = paint.fontMetrics
+    canvas.drawText(emoji, 24f, 24f - (font.ascent + font.descent) / 2f, paint)
     return BitmapDrawable(context.resources, bitmap)
 }

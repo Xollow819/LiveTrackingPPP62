@@ -23,6 +23,7 @@ class LocationTrackingService : Service(), LocationListener {
     private var paused = false
     private var participantName = "Student"
     private var team = "Team"
+    private var markerType = ParticipantMarkers.default
     private var sessionId = ""
     private var userId = ""
     private var lastFix: Location? = null
@@ -40,15 +41,17 @@ class LocationTrackingService : Service(), LocationListener {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         participantName = intent?.getStringExtra(EXTRA_NAME) ?: prefs.getString("name", "Student").orEmpty()
         team = intent?.getStringExtra(EXTRA_TEAM) ?: prefs.getString("team", "").orEmpty()
+        markerType = ParticipantMarkers.get(intent?.getStringExtra(EXTRA_MARKER_TYPE) ?: prefs.getString("marker_type", ParticipantMarkers.default).orEmpty()).id
         sessionId = intent?.getStringExtra(EXTRA_SESSION) ?: prefs.getString("session", "").orEmpty()
         userId = intent?.getStringExtra(EXTRA_USER) ?: prefs.getString("user", "").orEmpty()
         if (sessionId.isBlank() || userId.isBlank() || (intent == null && !prefs.getBoolean("sharing", false))) { stopSelf(); return START_NOT_STICKY }
         if ((intent?.action == ACTION_PAUSE || intent?.action == ACTION_RESUME) && !prefs.getBoolean("sharing", false)) { stopSelf(); return START_NOT_STICKY }
-        prefs.edit().putString("name",participantName).putString("team",team).putString("session",sessionId).putString("user",userId).apply()
+        prefs.edit().putString("name",participantName).putString("team",team).putString("session",sessionId).putString("user",userId).putString("marker_type",markerType).apply()
         identity.value = sessionId to userId
         when (intent?.action) {
             ACTION_PAUSE -> pauseTracking()
             ACTION_FINISH -> finishTracking()
+            ACTION_SET_MARKER -> scope.launch { lastFix?.let { publish(it, if (paused) TrackingState.PAUSED else TrackingState.LIVE) } }
             else -> if(intent==null && prefs.getBoolean("paused",false)) pauseTracking() else startTracking()
         }
         return START_STICKY
@@ -107,10 +110,10 @@ class LocationTrackingService : Service(), LocationListener {
     }
     private suspend fun publish(location:Location,value:TrackingState) {
         val app=application as PPP62Application
-        val row=PositionOutboxEntity(sessionId,userId,participantName,team,location.latitude,location.longitude,location.accuracy.toDouble(),location.time,value.name,System.currentTimeMillis())
+        val row=PositionOutboxEntity(sessionId,userId,participantName,team,location.latitude,location.longitude,location.accuracy.toDouble(),location.time,value.name,System.currentTimeMillis(),markerType)
         app.database.dao().queuePosition(row)
         try {
-            app.backend.publishPosition(row.sessionId,row.userId,row.displayName,row.latitude,row.longitude,row.accuracy,row.recordedAt,row.team,row.trackingState,row.eventAt)
+            app.backend.publishPosition(row.sessionId,row.userId,row.displayName,row.latitude,row.longitude,row.accuracy,row.recordedAt,row.team,row.trackingState,row.eventAt,row.markerType)
             app.database.dao().acknowledgePosition(row.sessionId,row.userId,row.eventAt)
         } catch(e:Exception) {SyncWorker.enqueue(app);throw e}
     }
@@ -165,6 +168,7 @@ class LocationTrackingService : Service(), LocationListener {
         const val EXTRA_SESSION = "session_id"; const val EXTRA_USER = "user_id"
         const val CHANNEL = "ppp62_tracking"; const val NOTIFICATION_ID = 62
         const val ACTION_PAUSE = "ppp62.PAUSE"; const val ACTION_RESUME = "ppp62.RESUME"; const val ACTION_FINISH = "ppp62.FINISH"
-        const val EXTRA_NAME = "participant_name"; const val EXTRA_TEAM = "team"
+        const val EXTRA_NAME = "participant_name"; const val EXTRA_TEAM = "team"; const val EXTRA_MARKER_TYPE = "marker_type"
+        const val ACTION_SET_MARKER = "ppp62.SET_MARKER"
     }
 }
