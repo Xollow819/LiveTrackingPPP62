@@ -2,6 +2,7 @@ package com.ppp62.livetracking.ui.screens
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -14,6 +15,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.UserRole
 import com.ppp62.livetracking.ui.components.*
@@ -36,7 +38,7 @@ fun WelcomeScreen(onRole: (UserRole) -> Unit, onPreferences: () -> Unit = {}) {
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically) {
-                Icon(Icons.Default.Route,null,tint=blue,modifier=Modifier.size(30.dp)); Spacer(Modifier.width(10.dp))
+                Image(painterResource(com.ppp62.livetracking.R.drawable.logo_ppp),"PPPVenza logo",modifier=Modifier.size(42.dp)); Spacer(Modifier.width(10.dp))
                 Text("PPPVenza",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                 IconButton(onClick=onPreferences){Icon(Icons.Default.Tune,"Preferences")}
             }

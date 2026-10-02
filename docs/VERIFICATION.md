@@ -41,6 +41,10 @@ No new Supabase migration or Room schema change is required: existing submission
 
 Seventeen JVM tests passed before the final immediate-completion UI update. On the Android 12/API 31 ARM64 emulator, service start/pause/resume/finish, startup auth storage, Room migration, and photo orientation tests passed. The synthetic student dashboard exercise displayed the ordered road route and advancing timer, kept the map across tabs, showed that intermediate stops need no forms, and opened the arrival form after Finish. Its final check initially exposed that the test inserted the arrival directly through the repository, bypassing the ViewModel’s normal form-save callback; the dashboard now also records successful phase saves directly in ViewModel state. That final UI redraw was not rerun on Android. Real moving-GPS behavior, that final UI redraw on a physical phone, and cross-device backend acceptance remain subject to the limitations below.
 
+## Branding and map layout — v1.2.5
+
+The launcher and welcome screen now share the PPP shield mark, preserving the orange seal colors and its three-P and fish details at small icon sizes. Lecturer setup uses a compact title row with a single explicit status-bar inset. On student and lecturer map dashboards, attribution now sits just above the measured bottom panel, keeping it visible across font sizes without colliding with dashboard controls.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.

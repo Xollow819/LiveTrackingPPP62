@@ -30,8 +30,8 @@ android {
         applicationId = "com.ppp62.livetracking"
         minSdk = 26
         targetSdk = 36
-        versionCode = 8
-        versionName = "1.2.4"
+        versionCode = 9
+        versionName = "1.2.5"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SYNC_ENDPOINT", "\"${providers.gradleProperty("PPP62_SYNC_ENDPOINT").orElse("").get()}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${bundledSupabase("SUPABASE_URL")}\"")

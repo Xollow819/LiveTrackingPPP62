@@ -80,10 +80,20 @@ fun LecturerSetupScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> U
     val titles = listOf("Session details", "Checkpoint map", "Join code")
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Column { Text("New field session", fontWeight = FontWeight.Bold); Text("Step ${step + 1} of 3 • ${titles[step]}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) } },
-                navigationIcon = { IconButton(onClick = { if (step > 0 && code == null) step-- else onBack() }) { Icon(Icons.Default.ArrowBack, null) } }
-            )
+            Surface(color = MaterialTheme.colorScheme.surface) {
+                Row(
+                    Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 52.dp).padding(end = 16.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    IconButton(onClick = { if (step > 0 && code == null) step-- else onBack() }, modifier = Modifier.padding(start = 4.dp)) {
+                        Icon(Icons.Default.ArrowBack, "Back")
+                    }
+                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                        Text("New field session", fontWeight = FontWeight.Bold)
+                        Text("Step ${step + 1} of 3 • ${titles[step]}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                }
+            }
         }
     ) { pad ->
         Box(Modifier.fillMaxSize().padding(pad)) {

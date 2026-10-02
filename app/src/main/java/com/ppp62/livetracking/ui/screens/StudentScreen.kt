@@ -18,6 +18,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.*
@@ -63,6 +65,8 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
     }
     val hasStart = hasRecord(TransportPhase.START); val hasEnd = hasRecord(TransportPhase.END)
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    val density = LocalDensity.current
+    var journeyPanelExtent by remember(session?.id) { mutableStateOf(232.dp) }
     fun start() {
         val current = session ?: return
         val uid = userId ?: return
@@ -99,9 +103,10 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
         }, Modifier.fillMaxSize().padding(pad))
         else Box(Modifier.fillMaxSize().padding(pad)) {
             // Keep the native map and its tiles alive while visiting Stops/Records.
-            StudentRouteMap(cps, own, "student-${session!!.id}", tab == 0)
+            StudentRouteMap(cps, own, "student-${session!!.id}", tab == 0, journeyPanelExtent + 8.dp)
             when (tab) {
-                0 -> GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)) {
+                0 -> GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
+                    .onSizeChanged { journeyPanelExtent = with(density) { it.height.toDp() } }.padding(16.dp)) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (sharing) Icons.Default.GpsFixed else Icons.Default.GpsOff, null, tint = MaterialTheme.colorScheme.primary)
@@ -210,7 +215,7 @@ private fun LocationFreshness(own: LocationEntity?) {
 }
 
 @Composable
-private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEntity?, viewportKey: String, active: Boolean) {
+private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEntity?, viewportKey: String, active: Boolean, attributionBottomPadding: androidx.compose.ui.unit.Dp) {
     if (checkpoints.isEmpty()) {
         if (active) Surface(Modifier.fillMaxSize()) {
             Box(Modifier.fillMaxSize().padding(bottom = 240.dp), contentAlignment = Alignment.Center) {
@@ -237,7 +242,7 @@ private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEn
     Box(Modifier.fillMaxSize()) {
         OsmMap(Modifier.fillMaxSize(), checkpoints, myLocation = location, target = target, viewportKey = viewportKey,
             showRadius = false, routePoints = route.points, roadRoute = route.road, fitCheckpoints = true,
-            routeOverviewRequest = overview, active = active, layersTopPadding = 124.dp, attributionBottomPadding = 235.dp)
+            routeOverviewRequest = overview, active = active, layersTopPadding = 124.dp, attributionBottomPadding = attributionBottomPadding)
         if (active) {
             MapExploreControls({ target = it }, Modifier.align(Alignment.TopEnd).padding(12.dp))
             if (checkpoints.isNotEmpty()) MapControlButton(Icons.Default.Route, "Show lecturer route", { overview++ },

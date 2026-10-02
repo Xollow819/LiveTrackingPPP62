@@ -15,6 +15,8 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.layout.onSizeChanged
 import android.content.Intent
 import android.net.Uri
 import android.provider.Settings
@@ -78,6 +80,9 @@ private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()
     var confirmClose by remember {mutableStateOf(false)}
     LaunchedEffect(Unit){while(true){now=System.currentTimeMillis();kotlinx.coroutines.delay(5000)}}
     val active=session ?: return
+    val density=LocalDensity.current
+    var mapFooterExtent by remember(active.id){mutableIntStateOf(with(density){128.dp.roundToPx()})}
+    val attributionInset=with(density){mapFooterExtent.toDp()}+8.dp
     val people=positions.map{it.toEntity(active.id)}
     val checkpoints=cps.mapIndexed{i,cp->cp.toEntity(i)}
     val live=people.count{now-it.recordedAt<90_000&&it.trackingState==TrackingState.LIVE}
@@ -87,13 +92,13 @@ private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()
     })},bottomBar={com.ppp62.livetracking.ui.components.GlassNavigation(tab,listOf("Map","Students","Records"),listOf(Icons.Default.Map,Icons.Default.Groups,Icons.Default.Assignment)){tab=it}}) {pad->
         when(tab){
             0->Box(Modifier.fillMaxSize().padding(pad)){
-                OsmMap(Modifier.fillMaxSize(),checkpoints,people,target=target,viewportKey="lecturer-${active.id}",layersTopPadding=124.dp,attributionBottomPadding=100.dp,onMapTap=if(adding) { point ->
+                OsmMap(Modifier.fillMaxSize(),checkpoints,people,target=target,viewportKey="lecturer-${active.id}",layersTopPadding=124.dp,attributionBottomPadding=attributionInset,onMapTap=if(adding) { point ->
                     editing=com.ppp62.livetracking.data.remote.CheckpointRow(id=java.util.UUID.randomUUID().toString(),sessionId=active.id,name="",lat=point.latitude,lng=point.longitude,orderIndex=(cps.maxOfOrNull{it.orderIndex} ?: 0)+1);adding=false
                 } else null)
                 if(active.isActive) MapControlButton(Icons.Default.Route,"Edit route",{routeOpen=true},Modifier.align(Alignment.TopStart).padding(12.dp))
                 if(adding) com.ppp62.livetracking.ui.components.CheckpointMapHint(Modifier.align(Alignment.TopStart).padding(start=12.dp,top=72.dp))
                 com.ppp62.livetracking.ui.components.MapExploreControls({target=it},Modifier.align(Alignment.TopEnd).padding(12.dp))
-                GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)){
+                GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged{mapFooterExtent=it.height}.padding(16.dp)){
                     Row(Modifier.fillMaxWidth().padding(20.dp),horizontalArrangement=Arrangement.SpaceBetween){
                         Column{Text("$live",style=MaterialTheme.typography.headlineMedium);Text("Live now",style=MaterialTheme.typography.labelMedium)}
                         Column{Text("${roster.count{it.role=="student"}}",style=MaterialTheme.typography.headlineMedium);Text("Students",style=MaterialTheme.typography.labelMedium)}

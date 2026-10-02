@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:fillColor="#FFF4DF"
+        android:strokeColor="#57290C"
+        android:strokeWidth="2.5"
+        android:strokeLineJoin="round"
+        android:pathData="M54,16 C44,20 35,20 29,18 L29,52 C29,69 40,82 54,90 C68,82 79,69 79,52 L79,18 C73,20 64,20 54,16 Z" />
+
+    <!-- Three P marks carry the university seal into a compact app-sized emblem. -->
+    <path android:fillColor="#57290C" android:pathData="M34,28h7a5,5 0,0 1,0 10h-3v4h-4z M49,28h7a5,5 0,0 1,0 10h-3v4h-4z M64,28h7a5,5 0,0 1,0 10h-3v4h-4z" />
+    <path android:fillColor="#FFF4DF" android:pathData="M38,31h3v4h-3z M53,31h3v4h-3z M68,31h3v4h-3z" />
+    <path android:strokeColor="#D77616" android:strokeWidth="1.5" android:strokeLineCap="round" android:pathData="M34,46h40" />
+
+    <!-- A fish crossing a tracked route ties the PPP crest to the field app. -->
+    <path
+        android:fillColor="#123675"
+        android:pathData="M34,62 C40,56 49,55 56,60 C62,56 70,57 75,62 L81,57 L79,65 L81,72 L75,67 C69,72 62,73 56,68 C49,73 40,71 34,65 L28,70 L30,63 L28,56 Z" />
+    <path android:fillColor="#FFF4DF" android:pathData="M69,62h2v2h-2z" />
+    <path android:fillColor="#0B756F" android:pathData="M39,77 C45,73 51,73 56,77 C61,81 67,81 73,77 L73,81 C67,85 60,85 55,81 C50,77 45,77 39,81 Z" />
+    <path android:fillColor="#F47A00" android:pathData="M45,79a2,2 0,1 0,-4 0a2,2 0,1 0,4 0 M71,79a2,2 0,1 0,-4 0a2,2 0,1 0,4 0" />
+</vector>
