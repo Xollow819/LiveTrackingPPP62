@@ -102,6 +102,7 @@ fun OsmMap(
             setDestroyMode(false)
             setTileSource(if (mapStyle == MapStyle.Satellite) satelliteSource else TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
+            setBuiltInZoomControls(false)
             val initial = savedViewport ?: myLocation ?: checkpoints.firstOrNull()?.let { GeoPoint(it.latitude, it.longitude) }
                 ?: participants.firstOrNull()?.let { GeoPoint(it.latitude, it.longitude) }
             controller.setZoom(if (savedViewport != null) Double.fromBits(viewportPrefs.getLong("$viewportKey.zoom", 15.0.toBits())) else if (initial != null) 15.0 else 13.5)

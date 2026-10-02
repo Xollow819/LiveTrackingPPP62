@@ -57,6 +57,10 @@ Lecturer and student map screens use compact liquid-glass headers over the map i
 
 The signed v1.2.7 build passed release lint and APK signature/package/installability checks, then installed over the existing app on the connected physical Vivo I2407 (Android 16). A live lecturer-session capture confirmed the header is directly beneath the status bar, map detail remains visible through map glass, and the contributor chip sits directly above the bottom navigation. No emulator was used.
 
+## Map controls — v1.2.8
+
+Disabled osmdroid's built-in plus/minus zoom buttons on map creation. Multi-touch controls remain enabled, so users can still zoom with pinch gestures. Verified by release lint, APK checks, and installation on the connected Vivo I2407; the zoom buttons no longer appear.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
