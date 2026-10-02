@@ -18,7 +18,7 @@ Open the repository in an Android Studio version supporting AGP 9.1.1, use JDK 1
 
 Configure the existing Supabase project and apply its migration using [SETUP.md](backend/supabase/SETUP.md). There is no seeded demonstration join code. Debug builds without project configuration show an unavailable state; release builds reject missing configuration. Never bundle a service-role key.
 
-For public downloads, use the signed `LiveTrackingPPP62-v1.2.6.apk` from [GitHub Releases](https://github.com/Xollow819/LiveTrackingPPP62/releases), rather than a debug APK. It supports Android 8.0 and newer. The production package is `com.ppp62.livetracking`; older debug builds use a separate `.debug` package and keep their own local data.
+For public downloads, use the signed `LiveTrackingPPP62-v1.2.7.apk` from [GitHub Releases](https://github.com/Xollow819/LiveTrackingPPP62/releases), rather than a debug APK. It supports Android 8.0 and newer. The production package is `com.ppp62.livetracking`; older debug builds use a separate `.debug` package and keep their own local data.
 
 Build a distributable APK with `python3 scripts/build_distribution.py` after configuring Supabase. The script creates a persistent private signing key once in `~/.android/pppvenza-release`, reuses it for subsequent builds, and runs assembly, unit tests, and release lint. Securely back up that entire directory: future updates require the same key. Never commit or share its contents. Native libraries are compressed and extracted during installation for installer compatibility. Unsigned release builds are rejected. CI debug artifacts are for development, not public distribution.
 

@@ -19,6 +19,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.shape.RoundedCornerShape
 import org.osmdroid.tileprovider.MapTileProviderBase
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -291,13 +292,27 @@ fun OsmMap(
         val attribution = (if (mapStyle == MapStyle.Satellite) metadata.attribution else "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>") +
             if (roadRoute && routePoints.isNotEmpty()) " · Route © <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap</a> · <a href=\"https://routing.openstreetmap.de/about.html\">FOSSGIS</a> · <a href=\"https://www.openstreetmap.org/fixthemap\">Fix the map</a>" else ""
         val attributionText = remember(attribution) { Html.fromHtml(attribution, Html.FROM_HTML_MODE_LEGACY) }
-        if (active) Surface(Modifier.align(Alignment.BottomStart).padding(bottom = attributionBottomPadding).fillMaxWidth(.82f), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
+        if (active) GlassCard(
+            Modifier.align(Alignment.BottomStart).padding(start = 8.dp, bottom = attributionBottomPadding).fillMaxWidth(.84f),
+            shape = RoundedCornerShape(14.dp), translucent = true
+        ) {
             val textColor = MaterialTheme.colorScheme.onSurface
-            AndroidView(factory = { TextView(it).apply { textSize = 10f; setPadding(8, 2, 8, 2); movementMethod = LinkMovementMethod.getInstance() } }, update = {
-                if (it.text.toString() != attributionText.toString()) it.text = attributionText
-                it.setTextColor(android.graphics.Color.argb(255, (textColor.red * 255).toInt(), (textColor.green * 255).toInt(), (textColor.blue * 255).toInt()))
-                it.setLinkTextColor(it.currentTextColor)
-            })
+            AndroidView(
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp),
+                factory = { viewContext ->
+                    TextView(viewContext).apply {
+                        textSize = 10f
+                        val inset = (6 * viewContext.resources.displayMetrics.density).toInt()
+                        setPadding(inset, 0, inset, 0)
+                        movementMethod = LinkMovementMethod.getInstance()
+                    }
+                },
+                update = {
+                    if (it.text.toString() != attributionText.toString()) it.text = attributionText
+                    it.setTextColor(android.graphics.Color.argb(255, (textColor.red * 255).toInt(), (textColor.green * 255).toInt(), (textColor.blue * 255).toInt()))
+                    it.setLinkTextColor(it.currentTextColor)
+                }
+            )
         }
     }
 

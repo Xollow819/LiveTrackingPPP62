@@ -18,8 +18,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.ppp62.livetracking.data.*
@@ -65,8 +63,6 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
     }
     val hasStart = hasRecord(TransportPhase.START); val hasEnd = hasRecord(TransportPhase.END)
     val notificationPermission = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
-    val density = LocalDensity.current
-    var journeyPanelExtent by remember(session?.id) { mutableStateOf(232.dp) }
     fun start() {
         val current = session ?: return
         val uid = userId ?: return
@@ -89,12 +85,13 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
         if (endpoint != null) onTransportRecord(endpoint.id, TransportPhase.END)
         else error = "Sharing stopped. Wait for the lecturer’s route to record ending conditions."
     }
-    Scaffold(topBar = { TopAppBar(title = { Column {
+    val joinedMapSession = profile.joined && session != null && role == "student"
+    Scaffold(topBar = { if (!profile.joined || session == null || role != "student") TopAppBar(title = { Column {
         Text(session?.title?.ifBlank { "Field session" } ?: "Field session", style = MaterialTheme.typography.titleLarge)
-        Text(if (profile.joined) "${profile.name} · ${profile.team}" else "Your route starts here", style = MaterialTheme.typography.labelMedium)
-    } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") } }, actions = {
-        if (profile.joined) IconButton(onClick = { bvm.leaveSession(); vm.resetSession() }) { Icon(Icons.Default.Logout, "Leave session") }
-    }) }, bottomBar = {
+        Text("Your route starts here", style = MaterialTheme.typography.labelMedium)
+    } }, navigationIcon = { IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, "Back") } }) },
+        contentWindowInsets = if (joinedMapSession) WindowInsets.systemBars.exclude(WindowInsets.statusBars) else WindowInsets.systemBars,
+        bottomBar = {
         if (profile.joined && session != null && role == "student") GlassNavigation(tab, listOf("Map", "Stops", "Records"), listOf(Icons.Default.Map, Icons.Default.Route, Icons.Default.ReceiptLong)) { tab = it }
     }) { pad ->
         if (!profile.joined || session == null || role != "student") JoinForm(code, { code = it.uppercase() }, name, { name = it }, team, { team = it }, error, joining, {
@@ -103,10 +100,10 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
         }, Modifier.fillMaxSize().padding(pad))
         else Box(Modifier.fillMaxSize().padding(pad)) {
             // Keep the native map and its tiles alive while visiting Stops/Records.
-            StudentRouteMap(cps, own, "student-${session!!.id}", tab == 0, journeyPanelExtent + 8.dp)
+            StudentRouteMap(cps, own, "student-${session!!.id}", tab == 0, 0.dp)
             when (tab) {
                 0 -> GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .onSizeChanged { journeyPanelExtent = with(density) { it.height.toDp() } }.padding(16.dp)) {
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 56.dp), translucent = true) {
                     Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             Icon(if (sharing) Icons.Default.GpsFixed else Icons.Default.GpsOff, null, tint = MaterialTheme.colorScheme.primary)
@@ -143,7 +140,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                     }
                 }
                 1 -> Surface(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(top = 72.dp), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item { Text("The route", style = MaterialTheme.typography.headlineLarge); Text("${cps.size} checkpoints · conditions at start and end", color = MaterialTheme.colorScheme.onSurfaceVariant) }
                         if (cps.isEmpty()) item { Text("Your lecturer has not added checkpoints yet.") }
                         items(cps, key = { it.id }) { cp -> GlassCard(Modifier.fillMaxWidth()) {
@@ -161,7 +158,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                     }
                 }
                 else -> Surface(Modifier.fillMaxSize()) {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    LazyColumn(Modifier.fillMaxSize().padding(top = 72.dp), contentPadding = PaddingValues(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                         item { Text("Your records", style = MaterialTheme.typography.headlineLarge); TextButton(onClick = { vm.retryUploads() }) { Text("Retry uploads") } }
                         if (records.isEmpty() && remoteRecords.isEmpty()) item { Text("Starting and ending transport records will appear here.") }
                         items(records, key = { it.id }) { record -> GlassCard(Modifier.fillMaxWidth()) {
@@ -185,6 +182,14 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                         } }
                     }
                 }
+            }
+            GlassPageHeader(
+                title = session?.title?.ifBlank { "Field session" } ?: "Field session",
+                subtitle = "${profile.name} · ${profile.team}",
+                onBack = onBack,
+                modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp)
+            ) {
+                IconButton(onClick = { bvm.leaveSession(); vm.resetSession() }) { Icon(Icons.Default.Logout, "Leave session") }
             }
         }
     }
@@ -242,17 +247,24 @@ private fun StudentRouteMap(checkpoints: List<CheckpointEntity>, own: LocationEn
     Box(Modifier.fillMaxSize()) {
         OsmMap(Modifier.fillMaxSize(), checkpoints, myLocation = location, target = target, viewportKey = viewportKey,
             showRadius = false, routePoints = route.points, roadRoute = route.road, fitCheckpoints = true,
-            routeOverviewRequest = overview, active = active, layersTopPadding = 124.dp, attributionBottomPadding = attributionBottomPadding)
+            routeOverviewRequest = overview, active = active, layersTopPadding = 184.dp, attributionBottomPadding = attributionBottomPadding)
         if (active) {
-            MapExploreControls({ target = it }, Modifier.align(Alignment.TopEnd).padding(12.dp))
-            if (checkpoints.isNotEmpty()) MapControlButton(Icons.Default.Route, "Show lecturer route", { overview++ },
-                Modifier.align(Alignment.TopEnd).padding(top = 180.dp, end = 12.dp))
-            if (points.size > 1) Surface(Modifier.align(Alignment.TopStart).padding(12.dp).widthIn(max = 210.dp), shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surface.copy(alpha = .94f)) {
-                Column(Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-                    Text(if (route.road) "Road route" else "Pin-to-pin path", style = MaterialTheme.typography.labelLarge)
-                    Text(String.format(java.util.Locale.ROOT, "%.1f km · %d stops", route.distanceMeters / 1000, checkpoints.size), style = MaterialTheme.typography.bodySmall)
-                    if (routing) Text("Finding road route…", style = MaterialTheme.typography.labelSmall)
-                    else if (!route.road) TextButton(onClick = { retry++ }, contentPadding = PaddingValues(0.dp)) { Text("Retry road route") }
+            MapExploreControls({ target = it }, Modifier.align(Alignment.TopEnd).padding(top = 72.dp, end = 12.dp))
+            if (points.size > 1) GlassCard(
+                Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 72.dp, end = 72.dp).widthIn(max = 270.dp),
+                shape = RoundedCornerShape(18.dp), translucent = true
+            ) {
+                Row(
+                    Modifier.fillMaxWidth().padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        Text(if (route.road) "Road route" else "Pin-to-pin path", style = MaterialTheme.typography.labelLarge)
+                        Text(String.format(java.util.Locale.ROOT, "%.1f km · %d stops", route.distanceMeters / 1000, checkpoints.size), style = MaterialTheme.typography.bodySmall)
+                        if (routing) Text("Finding road route…", style = MaterialTheme.typography.labelSmall)
+                        else if (!route.road) TextButton(onClick = { retry++ }, contentPadding = PaddingValues(0.dp)) { Text("Retry road route") }
+                    }
+                    IconButton(onClick = { overview++ }) { Icon(Icons.Default.Route, "Show lecturer route") }
                 }
             }
         }

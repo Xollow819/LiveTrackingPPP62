@@ -45,7 +45,7 @@ fun saveMapStyle(context: Context, style: MapStyle) {
 
 @Composable
 fun MapControlButton(icon: ImageVector, description: String, onClick: () -> Unit, modifier: Modifier = Modifier, busy: Boolean = false) {
-    GlassCard(onClick = onClick, modifier = modifier.size(48.dp).semantics { contentDescription = description }, shape = androidx.compose.foundation.shape.RoundedCornerShape(50)) {
+    GlassCard(onClick = onClick, modifier = modifier.size(48.dp).semantics { contentDescription = description }, shape = androidx.compose.foundation.shape.RoundedCornerShape(50), translucent = true) {
         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (busy) CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp)
             else Icon(icon, description, tint = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -92,7 +92,7 @@ fun CheckpointMapHint(modifier: Modifier = Modifier, visible: Boolean = true) {
                 onDragEnd = { if (drag < -32.dp.toPx()) expanded = false },
                 onHorizontalDrag = { change, amount -> drag += amount; change.consume() }
             )
-        }, shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp)) {
+        }, shape = androidx.compose.foundation.shape.RoundedCornerShape(24.dp), translucent = true) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 IconButton(onClick = { expanded = !expanded }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Default.Info, if (expanded) "Collapse checkpoint instructions" else "Show checkpoint instructions", tint = MaterialTheme.colorScheme.primary)

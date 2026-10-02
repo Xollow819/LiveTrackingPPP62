@@ -1,6 +1,7 @@
 package com.ppp62.livetracking.ui.screens
 
 import com.ppp62.livetracking.ui.components.GlassCard
+import com.ppp62.livetracking.ui.components.GlassPageHeader
 import kotlinx.serialization.encodeToString
 
 import android.Manifest
@@ -79,18 +80,21 @@ fun LecturerSetupScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> U
 
     val titles = listOf("Session details", "Checkpoint map", "Join code")
     Scaffold(
+        contentWindowInsets = if (step == 1) WindowInsets.systemBars.exclude(WindowInsets.statusBars) else WindowInsets.systemBars,
         topBar = {
-            Surface(color = MaterialTheme.colorScheme.surface) {
-                Row(
-                    Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 52.dp).padding(end = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    IconButton(onClick = { if (step > 0 && code == null) step-- else onBack() }, modifier = Modifier.padding(start = 4.dp)) {
-                        Icon(Icons.Default.ArrowBack, "Back")
-                    }
-                    Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                        Text("New field session", fontWeight = FontWeight.Bold)
-                        Text("Step ${step + 1} of 3 • ${titles[step]}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (step != 1) {
+                Surface(color = MaterialTheme.colorScheme.surface) {
+                    Row(
+                        Modifier.fillMaxWidth().statusBarsPadding().heightIn(min = 52.dp).padding(end = 16.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        IconButton(onClick = { if (step > 0 && code == null) step-- else onBack() }, modifier = Modifier.padding(start = 4.dp)) {
+                            Icon(Icons.Default.ArrowBack, "Back")
+                        }
+                        Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                            Text("New field session", fontWeight = FontWeight.Bold)
+                            Text("Step ${step + 1} of 3 • ${titles[step]}", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        }
                     }
                 }
             }
@@ -210,7 +214,8 @@ private fun MapStep(
     val density = LocalDensity.current
     var searchPanelHeight by remember { mutableIntStateOf(0) }
     var checkpointPanelHeight by remember { mutableIntStateOf(0) }
-    val gpsTop = if (searchOpen) with(density) { searchPanelHeight.toDp() } + 8.dp else 72.dp
+    val searchTop = 72.dp
+    val gpsTop = searchTop + (if (searchOpen) with(density) { searchPanelHeight.toDp() } else 72.dp) + 8.dp
 
     BoxWithConstraints(Modifier.fillMaxSize().imePadding()) {
         val showCheckpointPanel = !searchOpen || maxHeight >= 440.dp
@@ -222,12 +227,12 @@ private fun MapStep(
             myLocation = myLoc,
             target = target,
             onMapTap = { pendingPin = it },
-            layersTopPadding = gpsTop + 60.dp,
-            attributionBottomPadding = panelSpace
+            layersTopPadding = gpsTop + 56.dp,
+            attributionBottomPadding = 0.dp
         )
 
         // Search toggle + bar
-        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().onSizeChanged { searchPanelHeight = it.height }.padding(12.dp)) {
+        Column(Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(top = searchTop).onSizeChanged { searchPanelHeight = it.height }.padding(horizontal = 12.dp, vertical = 12.dp)) {
             if (!searchOpen) {
                 MapControlButton(Icons.Default.Search, "Search places", { searchOpen = true }, Modifier.align(Alignment.End))
             } else {
@@ -283,13 +288,14 @@ private fun MapStep(
         }
 
         CheckpointMapHint(
-            Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 12.dp, end = 72.dp),
+            Modifier.align(Alignment.TopStart).padding(start = 12.dp, top = 72.dp, end = 72.dp),
             visible = !searchOpen && pendingPin == null
         )
 
         // Keep search controls accessible when the keyboard leaves little map space.
         if (showCheckpointPanel) {
-            GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { checkpointPanelHeight = it.height }.padding(12.dp)) {
+            GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().onSizeChanged { checkpointPanelHeight = it.height }
+                .padding(start = 12.dp, end = 12.dp, top = 12.dp, bottom = 56.dp), translucent = true) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     if (drafts.isNotEmpty()) {
                         LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -319,6 +325,13 @@ private fun MapStep(
                 }
             }
         }
+
+        GlassPageHeader(
+            title = "New field session",
+            subtitle = "Step 2 of 3 · Checkpoint map",
+            onBack = onBack,
+            modifier = Modifier.align(Alignment.TopCenter).fillMaxWidth().padding(start = 12.dp, end = 12.dp, top = 8.dp)
+        )
     }
 
     pendingPin?.let { geo ->

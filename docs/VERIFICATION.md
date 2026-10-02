@@ -51,6 +51,12 @@ Replaced the crowded shield detail with a high-contrast map pin and a winding ro
 
 On the connected physical Vivo I2407 running Android 16, the signed v1.2.6 APK installed over v1.2.3 with `adb install -r`, preserving the existing app data. The home-screen icon and welcome-screen logo were reviewed from device captures; no emulator was used.
 
+## Map framing and attribution — v1.2.7
+
+Lecturer and student map screens use compact liquid-glass headers over the map instead of reserving a tall opaque app bar. Map screens exclude the already-applied status-bar inset, removing a duplicate 38dp top gap while preserving the bottom navigation inset. Search and map controls begin below the header. OpenStreetMap/provider credits sit at the map's bottom edge, below the raised glass stats and journey panels. The checkpoint setup map uses the same framing.
+
+The signed v1.2.7 build passed release lint and APK signature/package/installability checks, then installed over the existing app on the connected physical Vivo I2407 (Android 16). A live lecturer-session capture confirmed the header is directly beneath the status bar, map detail remains visible through map glass, and the contributor chip sits directly above the bottom navigation. No emulator was used.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
