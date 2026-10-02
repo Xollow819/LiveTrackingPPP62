@@ -31,7 +31,6 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
     val message by vm.message
     LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.clearMessage() } }
 
-    val glassState = remember { HazeState() }
     val context = androidx.compose.ui.platform.LocalContext.current
     val appearance = remember { context.getSharedPreferences("appearance",android.content.Context.MODE_PRIVATE) }
     var reduced by remember { mutableStateOf(appearance.getBoolean("opaque",false)) }
@@ -49,17 +48,20 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
         savingPassword=true
         scope.launch {try {app.backend.changePassword(recoveryPassword);recoveryPassword="";bvm.refreshAuthentication()}catch(e:Exception){recoveryError=UserFacingErrors.message(e, "Unable to change your password. Please try again.")}finally{savingPassword=false}}
     }){Text(if(savingPassword) "Saving…" else "Save password")}})
-    CompositionLocalProvider(LocalGlassState provides glassState, LocalReduceTransparency provides reduced) {
+    CompositionLocalProvider(LocalReduceTransparency provides reduced) {
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->
         NavHost(navController = nav, startDestination = "welcome", modifier = Modifier.fillMaxSize().padding(padding)) {
-            composable("welcome") { WelcomeScreen(onRole = { role -> scope.launch {
-                val nextRole=if(role==UserRole.STUDENT) "student" else "lecturer"
-                if(bvm.onlineSession.value!=null && bvm.myRole.value!=nextRole){bvm.leaveSession().join();vm.resetSession()}
-                nav.navigate(nextRole)
-            } }, onPreferences = {nav.navigate("preferences")}) }
-            composable("student") { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") },
-                onTransportRecord = { checkpoint, phase -> nav.navigate("transport/${phase.name}/$checkpoint") }) }
+            composable("welcome") { WithScreenGlass {
+                WelcomeScreen(onRole = { role -> scope.launch {
+                    val nextRole=if(role==UserRole.STUDENT) "student" else "lecturer"
+                    if(bvm.onlineSession.value!=null && bvm.myRole.value!=nextRole){bvm.leaveSession().join();vm.resetSession()}
+                    nav.navigate(nextRole)
+                } }, onPreferences = {nav.navigate("preferences")})
+            } }
+            composable("student") { WithScreenGlass { StudentScreen(vm, bvm, onBack = { nav.popBackStack() }, onCheckIn = { nav.navigate("checkin/$it") },
+                onTransportRecord = { checkpoint, phase -> nav.navigate("transport/${phase.name}/$checkpoint") }) } }
             composable("transport/{phase}/{checkpointId}") { entry ->
+                WithScreenGlass {
                 val phase = TransportPhase.valueOf(entry.arguments?.getString("phase").orEmpty())
                 CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty(), { nav.popBackStack() }, phase) {
                     if (phase == TransportPhase.START && bvm.onlineSession.value?.isActive == true) {
@@ -67,12 +69,21 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
                     }
                     nav.popBackStack()
                 }
+                }
             }
-            composable("checkin/{checkpointId}") { entry -> CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty(), { nav.popBackStack() }) }
-            composable("lecturer") { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onSubmissions = { nav.navigate("submissions") }) }
-            composable("preferences") { PreferencesScreen(bvm) {nav.popBackStack()} }
-            composable("submissions") { SubmissionsScreen(vm, bvm) { nav.popBackStack() } }
+            composable("checkin/{checkpointId}") { entry -> WithScreenGlass { CheckInScreen(vm, entry.arguments?.getString("checkpointId").orEmpty(), { nav.popBackStack() }) } }
+            composable("lecturer") { WithScreenGlass { LecturerScreen(vm, bvm, onBack = { nav.popBackStack() }, onSubmissions = { nav.navigate("submissions") }) } }
+            composable("preferences") { WithScreenGlass { PreferencesScreen(bvm) {nav.popBackStack()} } }
+            composable("submissions") { WithScreenGlass { SubmissionsScreen(vm, bvm) { nav.popBackStack() } } }
         }
     }
     }
+}
+
+/** Keep blur sources isolated per navigation entry so a departing native map
+ * cannot appear through glass on the destination during the back transition. */
+@Composable
+private fun WithScreenGlass(content: @Composable () -> Unit) {
+    val state = remember { HazeState() }
+    CompositionLocalProvider(LocalGlassState provides state, content = content)
 }
