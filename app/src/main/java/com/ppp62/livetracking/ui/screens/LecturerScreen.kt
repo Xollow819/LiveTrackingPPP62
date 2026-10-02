@@ -70,7 +70,7 @@ private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()
     val session by bvm.onlineSession; val positions by bvm.positions.collectAsState(); val cps by bvm.onlineCheckpoints.collectAsState()
     val roster by bvm.roster.collectAsState(); val submissions by bvm.onlineSubmissions.collectAsState(); val alerts by bvm.alerts.collectAsState()
     var tab by androidx.compose.runtime.saveable.rememberSaveable {mutableIntStateOf(0)}
-    var target by remember {mutableStateOf<GeoPoint?>(null)}
+    var target by remember {mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy())}
     var now by remember {mutableLongStateOf(System.currentTimeMillis())}
     var routeOpen by remember{mutableStateOf(false)}
     var adding by remember{mutableStateOf(false)}
@@ -87,7 +87,7 @@ private fun LecturerMonitorScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()
     })},bottomBar={com.ppp62.livetracking.ui.components.GlassNavigation(tab,listOf("Map","Students","Records"),listOf(Icons.Default.Map,Icons.Default.Groups,Icons.Default.Assignment)){tab=it}}) {pad->
         when(tab){
             0->Box(Modifier.fillMaxSize().padding(pad)){
-                OsmMap(Modifier.fillMaxSize(),checkpoints,people,target=target,layersTopPadding=124.dp,attributionBottomPadding=100.dp,onMapTap=if(adding) { point ->
+                OsmMap(Modifier.fillMaxSize(),checkpoints,people,target=target,viewportKey="lecturer-${active.id}",layersTopPadding=124.dp,attributionBottomPadding=100.dp,onMapTap=if(adding) { point ->
                     editing=com.ppp62.livetracking.data.remote.CheckpointRow(id=java.util.UUID.randomUUID().toString(),sessionId=active.id,name="",lat=point.latitude,lng=point.longitude,orderIndex=(cps.maxOfOrNull{it.orderIndex} ?: 0)+1);adding=false
                 } else null)
                 if(active.isActive) MapControlButton(Icons.Default.Route,"Edit route",{routeOpen=true},Modifier.align(Alignment.TopStart).padding(12.dp))

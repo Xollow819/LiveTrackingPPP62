@@ -140,14 +140,14 @@ private fun MapStep(
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
-    var myLoc by remember { mutableStateOf<GeoPoint?>(null) }
-    var target by remember { mutableStateOf<GeoPoint?>(null) }
+    var myLoc by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }
+    var target by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }
     var searchOpen by remember { mutableStateOf(false) }
     var query by remember { mutableStateOf("") }
     var results by remember { mutableStateOf<List<PlaceResult>>(emptyList()) }
     var searching by remember { mutableStateOf(false) }
     var searchError by remember { mutableStateOf<String?>(null) }
-    var pendingPin by remember { mutableStateOf<GeoPoint?>(null) }
+    var pendingPin by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }
     var mapError by remember { mutableStateOf<String?>(null) }
     var locating by remember { mutableStateOf(false) }
     var locationMessage by remember { mutableStateOf<String?>(null) }

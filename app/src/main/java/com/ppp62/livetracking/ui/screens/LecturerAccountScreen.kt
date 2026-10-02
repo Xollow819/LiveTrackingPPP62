@@ -28,8 +28,8 @@ fun LecturerAccountScreen(bvm:BackendViewModel,onBack:()->Unit) {
             Text(if(register) "Your workspace.\nYour group." else "Welcome back.",style=MaterialTheme.typography.headlineLarge)
             Text("Sign in to create routes, monitor students and review private evidence.",color=MaterialTheme.colorScheme.onSurfaceVariant)
             GlassCard(Modifier.fillMaxWidth()) { Column(Modifier.padding(20.dp),verticalArrangement=Arrangement.spacedBy(14.dp)) {
-                OutlinedTextField(email,{email=it},label={Text("Email")},singleLine=true,modifier=Modifier.fillMaxWidth())
-                OutlinedTextField(password,{password=it},label={Text("Password")},singleLine=true,visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(email,{email=it;error=null},label={Text("Email")},singleLine=true,modifier=Modifier.fillMaxWidth())
+                OutlinedTextField(password,{password=it;error=null},label={Text("Password")},singleLine=true,visualTransformation=PasswordVisualTransformation(),modifier=Modifier.fillMaxWidth())
             } }
             error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
             Button(onClick={busy=true; bvm.authenticate(email,password,register){busy=false;error=it}},enabled=!busy&&email.isNotBlank()&&password.length>=8,modifier=Modifier.fillMaxWidth().height(56.dp)) {

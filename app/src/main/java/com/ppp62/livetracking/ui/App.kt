@@ -1,5 +1,7 @@
 package com.ppp62.livetracking.ui
 
+import com.ppp62.livetracking.util.UserFacingErrors
+
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -44,7 +46,7 @@ fun PPP62App(vm: AppViewModel = viewModel(), bvm: BackendViewModel = viewModel()
         }
     },confirmButton={TextButton(enabled=!savingPassword&&recoveryPassword.length>=8,onClick={
         savingPassword=true
-        scope.launch {try {app.backend.changePassword(recoveryPassword);recoveryPassword="";bvm.refreshAuthentication()}catch(e:Exception){recoveryError=e.message}finally{savingPassword=false}}
+        scope.launch {try {app.backend.changePassword(recoveryPassword);recoveryPassword="";bvm.refreshAuthentication()}catch(e:Exception){recoveryError=UserFacingErrors.message(e, "Unable to change your password. Please try again.")}finally{savingPassword=false}}
     }){Text(if(savingPassword) "Saving…" else "Save password")}})
     CompositionLocalProvider(LocalGlassState provides glassState, LocalReduceTransparency provides reduced) {
     Scaffold(snackbarHost = { SnackbarHost(snackbar) }) { padding ->

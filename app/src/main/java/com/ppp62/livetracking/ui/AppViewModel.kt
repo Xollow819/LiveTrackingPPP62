@@ -1,5 +1,7 @@
 package com.ppp62.livetracking.ui
 
+import com.ppp62.livetracking.util.UserFacingErrors
+
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
@@ -50,7 +52,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             com.ppp62.livetracking.service.SyncWorker.enqueue(app)
             message.value = "Check-in saved · upload queued"
             onDone()
-        } catch (e: Exception) { message.value = e.message ?: "Unable to save check-in" }
+        } catch (e: Exception) { message.value = UserFacingErrors.message(e, "Unable to save check-in") }
     }
 
     fun retryUploads() = viewModelScope.launch {

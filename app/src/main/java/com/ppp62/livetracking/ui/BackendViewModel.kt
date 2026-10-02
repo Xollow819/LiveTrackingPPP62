@@ -1,5 +1,7 @@
 package com.ppp62.livetracking.ui
 
+import com.ppp62.livetracking.util.UserFacingErrors
+
 import android.app.Application
 import android.content.Intent
 import androidx.compose.runtime.mutableStateOf
@@ -74,7 +76,7 @@ class BackendViewModel(application: Application) : AndroidViewModel(application)
     private fun failed(e: Exception) {
         if (e is CancellationException) throw e
         connectionState.value = ConnectionState.RECONNECTING
-        connectionMessage.value = e.message ?: "Connection interrupted · retrying"
+        connectionMessage.value = UserFacingErrors.message(e, "Connection interrupted · retrying")
     }
     fun authenticate(email: String, password: String, register: Boolean = false, onResult: (String?) -> Unit) = viewModelScope.launch {
         try {
@@ -82,11 +84,11 @@ class BackendViewModel(application: Application) : AndroidViewModel(application)
             lecturerAuthenticated.value = backend.isLecturerSignedIn()
             myUserId.value = backend.ensureSignedIn()
             onResult(if (lecturerAuthenticated.value) null else "Check your email to confirm your account, then sign in")
-        } catch (e: Exception) { onResult(e.message ?: "Sign-in failed") }
+        } catch (e: Exception) { onResult(UserFacingErrors.message(e, "Sign-in failed")) }
     }
     fun resetPassword(email: String, onResult: (String) -> Unit) = viewModelScope.launch {
         try { backend.resetPassword(email); onResult("Password reset email requested") }
-        catch (e: Exception) { onResult(e.message ?: "Unable to request reset") }
+        catch (e: Exception) { onResult(UserFacingErrors.message(e, "Unable to request reset")) }
     }
     private suspend fun activate(session: SessionRow, role: String) {
         config.saveOnlineSession(session.code, session.id); config.saveRole(role)
@@ -107,7 +109,7 @@ class BackendViewModel(application: Application) : AndroidViewModel(application)
             myUserId.value=uid
             config.saveDisplayName(displayName); config.saveTeam(team)
             activate(session,role); onJoined(session)
-        } catch(e: Exception) { onError(e.message ?: "Join failed") }
+        } catch(e: Exception) { onError(UserFacingErrors.message(e, "Join failed")) }
     }
     fun createSessionWithCheckpoints(title: String, drafts: List<DraftCheckpoint>, onResult: (String?,String?) -> Unit) = viewModelScope.launch {
         try {
@@ -118,11 +120,11 @@ class BackendViewModel(application: Application) : AndroidViewModel(application)
             config.saveDisplayName("Lecturer"); config.saveRole("lecturer")
             config.saveOnlineSession(session.code,session.id);myUserId.value?.let{config.saveVerifiedUser(it)}
             pendingSession=session; onResult(session.code,null)
-        } catch(e:Exception) { onResult(null,e.message ?: "Could not create session") }
+        } catch(e:Exception) { onResult(null,UserFacingErrors.message(e, "Could not create session")) }
     }
     fun startMonitoring() = viewModelScope.launch { pendingSession?.let { pendingSession=null; activate(it,"lecturer") } }
     fun saveCheckpoint(row:CheckpointRow,onResult:(String?)->Unit)=viewModelScope.launch {
-        try {backend.saveCheckpoint(row);refreshSnapshot(row.sessionId);onResult(null)}catch(e:Exception){onResult(e.message ?: "Unable to save checkpoint")}
+        try {backend.saveCheckpoint(row);refreshSnapshot(row.sessionId);onResult(null)}catch(e:Exception){onResult(UserFacingErrors.message(e, "Unable to save checkpoint"))}
     }
     fun removeCheckpoint(row:CheckpointRow)=viewModelScope.launch {
         try {requireNotNull(row.id);backend.removeCheckpoint(row.id);refreshSnapshot(row.sessionId)}catch(e:Exception){failed(e)}
@@ -201,7 +203,7 @@ class BackendViewModel(application: Application) : AndroidViewModel(application)
     fun refreshEnabled() = viewModelScope.launch { backendEnabled.value=backend.isConfigured() }
     fun saveConfig(url:String,key:String,onDone:(Boolean,String)->Unit) = viewModelScope.launch {
         testingConnection.value=true
-        try { config.save(url,key); val result=backend.testConnection(); backendEnabled.value=result.isSuccess; onDone(result.isSuccess,result.exceptionOrNull()?.message ?: "Connected") }
+        try { config.save(url,key); val result=backend.testConnection(); backendEnabled.value=result.isSuccess; onDone(result.isSuccess,result.exceptionOrNull()?.let { UserFacingErrors.message(it, "Unable to connect. Please try again.") } ?: "Connected") }
         finally { testingConnection.value=false }
     }
     fun clearConfig() = viewModelScope.launch { leaveSession(); config.clear(); backendEnabled.value=backend.isConfigured() }

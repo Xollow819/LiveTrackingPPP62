@@ -28,10 +28,14 @@ import com.ppp62.livetracking.util.LocationUtils
 import org.osmdroid.events.MapEventsReceiver
 import org.osmdroid.tileprovider.tilesource.TileSourceFactory
 import org.osmdroid.util.GeoPoint
+import org.osmdroid.util.MapTileIndex
+import kotlin.math.*
 import org.osmdroid.views.MapView
 import org.osmdroid.views.overlay.MapEventsOverlay
 import org.osmdroid.views.overlay.Marker
 import org.osmdroid.views.overlay.Polygon
+import org.osmdroid.views.overlay.Overlay
+import kotlinx.coroutines.delay
 
 /**
  * Street/satellite map with persistent layers selection and provider attribution:
@@ -54,23 +58,20 @@ fun OsmMap(
     mapStyle: MapStyle = rememberMapStyle(),
     layersTopPadding: Dp = 72.dp,
     attributionBottomPadding: Dp = 0.dp,
+    viewportKey: String = "explore",
 ) {
     val context = LocalContext.current
     val tapHandler = rememberUpdatedState(onMapTap)
-    var metadata by remember { mutableStateOf<SatelliteMetadata?>(null) }
-    var loading by remember { mutableStateOf(false) }
+    val metadata = remember { SatelliteTiles.defaultMetadata }
+    val satelliteSource = remember { SatelliteTiles.source(metadata) }
     var tileError by remember { mutableStateOf<String?>(null) }
     var retry by remember { mutableIntStateOf(0) }
     val currentStyle = rememberUpdatedState(mapStyle)
-    LaunchedEffect(mapStyle, retry) {
-        tileError = null
-        if (mapStyle == MapStyle.Satellite) {
-            loading = true
-            try { metadata = SatelliteTiles.metadata() }
-            catch (error: kotlinx.coroutines.CancellationException) { throw error }
-            catch (_: Exception) { tileError = "Satellite imagery could not be loaded. Check your connection and retry." }
-            finally { loading = false }
-        }
+    val viewportPrefs = remember(context) { context.getSharedPreferences("map_viewports", Context.MODE_PRIVATE) }
+    val savedViewport = remember(viewportKey) {
+        if (viewportPrefs.contains("$viewportKey.lat")) GeoPoint(
+            Double.fromBits(viewportPrefs.getLong("$viewportKey.lat", 0)),
+            Double.fromBits(viewportPrefs.getLong("$viewportKey.lon", 0))) else null
     }
     val blueDot = remember(context) {
         GradientDrawable().apply {
@@ -85,26 +86,29 @@ fun OsmMap(
     }
     val liveIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#0A84FF"), "") }
     val staleIcon = remember(context) { mapPin(context, AndroidColor.parseColor("#A66600"), "") }
-    val map = remember {
+    val map = remember(context, viewportKey) {
         MapView(context).apply {
             // Compose owns final cleanup; temporary View detaches must not destroy the tile provider.
             setDestroyMode(false)
-            setTileSource(TileSourceFactory.MAPNIK)
+            setTileSource(if (mapStyle == MapStyle.Satellite) satelliteSource else TileSourceFactory.MAPNIK)
             setMultiTouchControls(true)
-            controller.setZoom(13.5)
-            // Neutral fallback; screens recenter on the device location when available.
-            controller.setCenter(GeoPoint(-6.1751, 106.8650))
+            val initial = savedViewport ?: myLocation ?: checkpoints.firstOrNull()?.let { GeoPoint(it.latitude, it.longitude) }
+                ?: participants.firstOrNull()?.let { GeoPoint(it.latitude, it.longitude) }
+            controller.setZoom(if (savedViewport != null) Double.fromBits(viewportPrefs.getLong("$viewportKey.zoom", 15.0.toBits())) else if (initial != null) 15.0 else 13.5)
+            controller.setCenter(initial ?: GeoPoint(-6.1751, 106.8650))
+            // Queue the visible center before the first raster scan queues the surrounding tiles.
+            addOnFirstLayoutListener { _, _, _, _, _ -> requestCenterTile(this) }
         }
     }
-    LaunchedEffect(mapStyle, metadata, retry) {
-        if (mapStyle == MapStyle.Standard || metadata != null) {
-            val center = GeoPoint(map.mapCenter.latitude, map.mapCenter.longitude)
-            val zoom = map.zoomLevelDouble
-            map.setTileSource(if (mapStyle == MapStyle.Satellite) SatelliteTiles.source(metadata!!) else TileSourceFactory.MAPNIK)
-            map.controller.setZoom(zoom.coerceIn(map.minZoomLevel, map.maxZoomLevel))
-            map.controller.setCenter(center)
-            map.invalidate()
+    LaunchedEffect(map, mapStyle, retry) {
+        tileError = null
+        val source = if (mapStyle == MapStyle.Satellite) satelliteSource else TileSourceFactory.MAPNIK
+        // Setting the same source clears the in-memory tile cache, so avoid doing it on entry.
+        if (map.tileProvider.tileSource !== source) {
+            map.setTileSource(source)
+            if (map.width > 0 && map.height > 0) requestCenterTile(map)
         }
+        if (retry > 0) { map.tileProvider.clearTileCache(); requestCenterTile(map); map.invalidate() }
     }
     DisposableEffect(map) {
         val tileHandler = Handler(Looper.getMainLooper()) { message ->
@@ -124,13 +128,17 @@ fun OsmMap(
 
             override fun longPressHelper(p: GeoPoint): Boolean = false
         })
-        // Tap overlay stays at index 0; the update block rebuilds everything after it.
+        // Keep the tap overlay separate from independently updated marker groups.
         map.overlays.add(0, events)
         map.onResume()
-        onDispose { map.tileProvider.tileRequestCompleteHandlers.remove(tileHandler); tileHandler.removeCallbacksAndMessages(null); map.onPause(); map.onDetach() }
+        onDispose {
+            viewportPrefs.edit().putLong("$viewportKey.lat", map.mapCenter.latitude.toBits())
+                .putLong("$viewportKey.lon", map.mapCenter.longitude.toBits())
+                .putLong("$viewportKey.zoom", map.zoomLevelDouble.toBits()).apply()
+            map.tileProvider.tileRequestCompleteHandlers.remove(tileHandler); tileHandler.removeCallbacksAndMessages(null); map.onPause(); map.onDetach() }
     }
 
-    var centeredOnDevice by remember { mutableStateOf(false) }
+    var centeredOnDevice by remember(map) { mutableStateOf(savedViewport != null || myLocation != null) }
     LaunchedEffect(myLocation) {
         if (!centeredOnDevice && myLocation != null) {
             centeredOnDevice = true
@@ -138,97 +146,128 @@ fun OsmMap(
             map.controller.setCenter(myLocation)
         }
     }
-    var lastTarget by remember { mutableStateOf<GeoPoint?>(null) }
+    var routeFocused by remember(map) { mutableStateOf(savedViewport != null || myLocation != null || checkpoints.isNotEmpty()) }
+    LaunchedEffect(map, checkpoints.firstOrNull()?.id) {
+        if (!routeFocused && checkpoints.isNotEmpty() && viewportKey != "explore") {
+            routeFocused = true
+            val first = checkpoints.first()
+            map.controller.setZoom(15.0)
+            map.controller.setCenter(GeoPoint(first.latitude, first.longitude))
+        }
+    }
+    val routeOverlays = remember(map) { mutableListOf<Overlay>() }
+    LaunchedEffect(map, checkpoints, showRadius, checkpointIcons) {
+        map.overlays.removeAll(routeOverlays.toSet())
+        val markerOverlays = routeOverlays
+        markerOverlays.clear()
+        if (showRadius) {
+            checkpoints.forEach { cp ->
+                markerOverlays.add(Polygon().apply {
+                    points = circlePoints(GeoPoint(cp.latitude, cp.longitude), cp.radiusMeters)
+                    fillColor = 0x3310B981
+                    strokeColor = 0xFF10B981.toInt()
+                    strokeWidth = 2f
+                })
+            }
+        }
+        checkpoints.forEach { cp ->
+            markerOverlays.add(Marker(map).apply {
+                position = GeoPoint(cp.latitude, cp.longitude)
+                title = "${cp.orderIndex}. ${cp.name}"
+                icon = checkpointIcons[cp.id]
+                snippet = buildString {
+                    append("Radius ${cp.radiusMeters.toInt()} m")
+                    if (cp.instructions.isNotBlank()) append(" • ${cp.instructions}")
+                }
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            })
+        }
+        map.overlays.addAll(minOf(1, map.overlays.size), routeOverlays)
+        map.invalidate()
+    }
+    var freshnessTick by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    LaunchedEffect(map, participants.isNotEmpty()) {
+        if (participants.isNotEmpty()) while (true) { delay(5000); freshnessTick = System.currentTimeMillis() }
+    }
+    val staleStates = participants.map { freshnessTick - it.recordedAt > 90_000 }
+    val participantOverlays = remember(map) { mutableListOf<Overlay>() }
+    LaunchedEffect(map, participants, staleStates) {
+        map.overlays.removeAll(participantOverlays.toSet())
+        val markerOverlays = participantOverlays
+        markerOverlays.clear()
+        participants.forEach { p ->
+            val status = when {
+                p.trackingState == TrackingState.PAUSED -> "PAUSED"
+                p.trackingState == TrackingState.FINISHED -> "FINISHED"
+                LocationUtils.isStale(p.recordedAt) -> "STALE"
+                else -> "LIVE"
+            }
+            markerOverlays.add(Marker(map).apply {
+                position = GeoPoint(p.latitude, p.longitude)
+                title = p.participantName
+                icon = if (status == "LIVE") liveIcon else staleIcon
+                snippet = "${p.team} • $status • Battery ${p.batteryPercent}%"
+                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+            })
+        }
+        map.overlays.addAll(participantOverlays)
+        map.invalidate()
+    }
+    val locationMarker = remember(map) { Marker(map).apply {
+        icon = blueDot; title = "My location"; setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+    } }
+    LaunchedEffect(map, myLocation?.latitude, myLocation?.longitude) {
+        if (myLocation == null) map.overlays.remove(locationMarker)
+        else { locationMarker.position = myLocation; if (!map.overlays.contains(locationMarker)) map.overlays.add(locationMarker) }
+        map.invalidate()
+    }
+    val lastCameraRequest = remember(map) { arrayOf<GeoPoint?>(if (savedViewport != null) target else null) }
+    SideEffect {
+        // Each button press is a request, even if its coordinates match the previous fix.
+        if (target != null && target !== lastCameraRequest[0]) {
+            lastCameraRequest[0] = target
+            map.controller.animateTo(target)
+            if (map.zoomLevelDouble < targetZoom) map.controller.setZoom(targetZoom)
+        }
+    }
 
     Box(modifier) {
-        AndroidView(
-            factory = { map },
-            modifier = Modifier.fillMaxSize().glassSource(LocalGlassState.current),
-            update = { mv ->
-                val events = mv.overlays.filterIsInstance<MapEventsOverlay>()
-                mv.overlays.clear()
-                mv.overlays.addAll(events)
-
-                if (showRadius) {
-                    checkpoints.forEach { cp ->
-                        mv.overlays.add(Polygon().apply {
-                            points = circlePoints(GeoPoint(cp.latitude, cp.longitude), cp.radiusMeters)
-                            fillColor = 0x3310B981
-                            strokeColor = 0xFF10B981.toInt()
-                            strokeWidth = 2f
-                        })
-                    }
-                }
-                checkpoints.forEach { cp ->
-                    mv.overlays.add(Marker(mv).apply {
-                        position = GeoPoint(cp.latitude, cp.longitude)
-                        title = "${cp.orderIndex}. ${cp.name}"
-                        icon = checkpointIcons[cp.id]
-                        snippet = buildString {
-                            append("Radius ${cp.radiusMeters.toInt()} m")
-                            if (cp.instructions.isNotBlank()) append(" • ${cp.instructions}")
-                        }
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    })
-                }
-                participants.forEach { p ->
-                    val status = when {
-                        p.trackingState == TrackingState.PAUSED -> "PAUSED"
-                        p.trackingState == TrackingState.FINISHED -> "FINISHED"
-                        LocationUtils.isStale(p.recordedAt) -> "STALE"
-                        else -> "LIVE"
-                    }
-                    mv.overlays.add(Marker(mv).apply {
-                        position = GeoPoint(p.latitude, p.longitude)
-                        title = p.participantName
-                        icon = if (status == "LIVE") liveIcon else staleIcon
-                        snippet = "${p.team} • $status • Battery ${p.batteryPercent}%"
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                    })
-                }
-                myLocation?.let { loc ->
-                    mv.overlays.add(Marker(mv).apply {
-                        position = loc
-                        icon = blueDot
-                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                        title = "My location"
-                    })
-                }
-
-                if (target != null && target != lastTarget) {
-                    lastTarget = target
-                    mv.controller.animateTo(target)
-                    if (mv.zoomLevelDouble < targetZoom) mv.controller.setZoom(targetZoom)
-                }
-                mv.invalidate()
-            }
-        )
+        AndroidView(factory = { map }, modifier = Modifier.fillMaxSize().glassSource(LocalGlassState.current))
         MapLayersControl(mapStyle, { saveMapStyle(context, it) }, Modifier.align(Alignment.TopEnd).padding(top = layersTopPadding, end = 12.dp))
-        if (loading || tileError != null) {
+        if (tileError != null) {
             Surface(Modifier.align(Alignment.CenterStart).padding(12.dp).widthIn(max = 230.dp), shape = MaterialTheme.shapes.medium, shadowElevation = 3.dp) {
                 Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    if (loading) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("Loading satellite imagery…", style = MaterialTheme.typography.bodySmall) }
-                    else {
                         Text(tileError.orEmpty(), style = MaterialTheme.typography.bodySmall)
                         Row {
-                            TextButton(onClick = { retry++; map.tileProvider.clearTileCache() }) { Text("Retry") }
+                            TextButton(onClick = { retry++ }) { Text("Retry") }
                             TextButton(onClick = { saveMapStyle(context, MapStyle.Standard) }) { Text("Standard") }
                         }
-                    }
                 }
             }
         }
-        val attribution = if (mapStyle == MapStyle.Satellite && metadata != null) metadata!!.attribution else "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>"
+        val attribution = if (mapStyle == MapStyle.Satellite) metadata.attribution else "© <a href=\"https://www.openstreetmap.org/copyright\">OpenStreetMap contributors</a>"
+        val attributionText = remember(attribution) { Html.fromHtml(attribution, Html.FROM_HTML_MODE_LEGACY) }
         Surface(Modifier.align(Alignment.BottomStart).padding(bottom = attributionBottomPadding).fillMaxWidth(.82f), color = MaterialTheme.colorScheme.surface.copy(alpha = .92f)) {
             val textColor = MaterialTheme.colorScheme.onSurface
             AndroidView(factory = { TextView(it).apply { textSize = 10f; setPadding(8, 2, 8, 2); movementMethod = LinkMovementMethod.getInstance() } }, update = {
-                it.text = Html.fromHtml(attribution, Html.FROM_HTML_MODE_LEGACY)
+                if (it.text.toString() != attributionText.toString()) it.text = attributionText
                 it.setTextColor(android.graphics.Color.argb(255, (textColor.red * 255).toInt(), (textColor.green * 255).toInt(), (textColor.blue * 255).toInt()))
                 it.setLinkTextColor(it.currentTextColor)
             })
         }
     }
 
+}
+
+/** One tile in the requested viewport; no speculative or bulk prefetch. */
+private fun requestCenterTile(map: MapView) {
+    val zoom = floor(map.zoomLevelDouble).toInt().coerceIn(0, 21)
+    val count = 1 shl zoom
+    val point = map.mapCenter
+    val x = floor((point.longitude + 180.0) / 360.0 * count).toInt().coerceIn(0, count - 1)
+    val latitude = point.latitude.coerceIn(-85.05112878, 85.05112878)
+    val y = floor((1.0 - asinh(tan(Math.toRadians(latitude))) / PI) / 2.0 * count).toInt().coerceIn(0, count - 1)
+    map.tileProvider.getMapTile(MapTileIndex.getTileIndex(zoom, x, y))
 }
 
 /** Great-circle circle points (osmdroid-version independent). */

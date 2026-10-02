@@ -40,7 +40,7 @@ fun StudentScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()->Unit,onCheckIn
     val serviceState by LocationTrackingService.state.collectAsState()
     var code by rememberSaveable { mutableStateOf("") }; var name by rememberSaveable { mutableStateOf("") }; var team by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }; var joining by remember { mutableStateOf(false) }; var tab by rememberSaveable { mutableIntStateOf(0) }
-    var target by remember { mutableStateOf<GeoPoint?>(null) }; var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
+    var target by remember { mutableStateOf<GeoPoint?>(null, referentialEqualityPolicy()) }; var now by remember { mutableLongStateOf(System.currentTimeMillis()) }
     LaunchedEffect(Unit) { while(true) {now=System.currentTimeMillis();delay(5000)} }
     LaunchedEffect(cps) { vm.setSessionCheckpoints(cps) }
     LaunchedEffect(session?.id,role) {
@@ -69,7 +69,7 @@ fun StudentScreen(vm:AppViewModel,bvm:BackendViewModel,onBack:()->Unit,onCheckIn
         },Modifier.fillMaxSize().padding(pad))
         else when(tab) {
             0 -> Box(Modifier.fillMaxSize().padding(pad)) {
-                OsmMap(Modifier.fillMaxSize(),cps,listOfNotNull(own),myLocation=own?.let{GeoPoint(it.latitude,it.longitude)},target=target,layersTopPadding=124.dp,attributionBottomPadding=160.dp)
+                OsmMap(Modifier.fillMaxSize(),cps,listOfNotNull(own),myLocation=own?.let{GeoPoint(it.latitude,it.longitude)},target=target,viewportKey="student-${session!!.id}",layersTopPadding=124.dp,attributionBottomPadding=160.dp)
                 MapExploreControls({target=it},Modifier.align(Alignment.TopEnd).padding(12.dp))
                 GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth().padding(16.dp)) {
                     Column(Modifier.padding(18.dp),verticalArrangement=Arrangement.spacedBy(12.dp)) {

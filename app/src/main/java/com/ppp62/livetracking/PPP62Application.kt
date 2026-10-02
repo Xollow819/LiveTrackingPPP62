@@ -22,10 +22,13 @@ class PPP62Application : Application(), Configuration.Provider {
     override fun onCreate() {
         super.onCreate()
         OsmConfiguration.getInstance().apply {
-            userAgentValue = packageName
             load(this@PPP62Application, getSharedPreferences("osmdroid", MODE_PRIVATE))
-            tileFileSystemCacheMaxBytes = 64L * 1024 * 1024
-            tileFileSystemCacheTrimBytes = 48L * 1024 * 1024
+            userAgentValue = "$packageName/${BuildConfig.VERSION_NAME}"
+            tileDownloadThreads = 4 // Each source still enforces its own concurrency limit (OSM: 2).
+            tileDownloadMaxQueueSize = 64
+            cacheMapTileCount = if (getSystemService(android.app.ActivityManager::class.java).isLowRamDevice) 64 else 128
+            tileFileSystemCacheMaxBytes = 256L * 1024 * 1024
+            tileFileSystemCacheTrimBytes = 192L * 1024 * 1024
         }
         database = Room.databaseBuilder(this, AppDatabase::class.java, "ppp62.db")
             .addMigrations(com.ppp62.livetracking.data.DatabaseMigrations.FROM_1_TO_2)

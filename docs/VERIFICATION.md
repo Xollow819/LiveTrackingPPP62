@@ -13,6 +13,16 @@ The app uses the Anthropic frontend-design direction in [DESIGN.md](DESIGN.md), 
 
 - Configured-app cold launch on Pixel 8a passed after fixing the startup provider in v1.2.1. Only WorkManager's initializer is disabled; Supabase's SettingsInitializer is retained. A new native regression test for default auth/session and PKCE storage passes. Nine unit tests and lint pass for this patch.
 
+## Map loading optimisation
+
+Physical-device map-only checks passed on the connected I2407 phone. Session/evidence records were not modified by the test. Native overlay identities remain unchanged after unrelated UI updates; repeated GPS requests to the same coordinates recenter correctly; returning to the map preserves its camera.
+
+The app now starts directly with the selected layer, avoids resetting an unchanged tile source, separates route geometry from live marker updates, remembers per-session camera position, uses bounded 64/128-tile memory caches and a 256 MB disk cache, and requests the visible center tile first. Satellite requests allow four concurrent visible downloads and disable speculative prefetch; OpenStreetMap retains its own two-request concurrency policy.
+
+Measured cached re-entry was 203–209 ms (including a deliberate 200 ms test wait), with no additional wait for the cached center tile. A later cached center tile was available within the test's initial 506 ms observation window. These are device observations, not a controlled before/after benchmark or a claim that every tile completes in that time.
+
+Uncached imagery remains dependent on the provider/network: one satellite run exceeded the test's 30-second tile wait, and a direct uncached EOX request from the host took 13 seconds. The subsequent cached device run passed. No forced cache expiry or bulk/offscreen downloads were added.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
