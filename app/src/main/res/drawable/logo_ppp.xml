@@ -4,23 +4,26 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
+    <!-- A map pin keeps the PPPVenza mark recognizable at launcher-icon size. -->
     <path
         android:fillColor="#FFF4DF"
-        android:strokeColor="#57290C"
-        android:strokeWidth="2.5"
+        android:strokeColor="#123675"
+        android:strokeWidth="2.8"
         android:strokeLineJoin="round"
-        android:pathData="M54,16 C44,20 35,20 29,18 L29,52 C29,69 40,82 54,90 C68,82 79,69 79,52 L79,18 C73,20 64,20 54,16 Z" />
+        android:pathData="M54,20 C37.5,20 24,33.5 24,50 C24,64 40,77 54,89 C68,77 84,64 84,50 C84,33.5 70.5,20 54,20 Z" />
 
-    <!-- Three P marks carry the university seal into a compact app-sized emblem. -->
-    <path android:fillColor="#57290C" android:pathData="M34,28h7a5,5 0,0 1,0 10h-3v4h-4z M49,28h7a5,5 0,0 1,0 10h-3v4h-4z M64,28h7a5,5 0,0 1,0 10h-3v4h-4z" />
-    <path android:fillColor="#FFF4DF" android:pathData="M38,31h3v4h-3z M53,31h3v4h-3z M68,31h3v4h-3z" />
-    <path android:strokeColor="#D77616" android:strokeWidth="1.5" android:strokeLineCap="round" android:pathData="M34,46h40" />
-
-    <!-- A fish crossing a tracked route ties the PPP crest to the field app. -->
+    <!-- Three checkpoints on a winding route connect the pin to field tracking. -->
     <path
-        android:fillColor="#123675"
-        android:pathData="M34,62 C40,56 49,55 56,60 C62,56 70,57 75,62 L81,57 L79,65 L81,72 L75,67 C69,72 62,73 56,68 C49,73 40,71 34,65 L28,70 L30,63 L28,56 Z" />
-    <path android:fillColor="#FFF4DF" android:pathData="M69,62h2v2h-2z" />
-    <path android:fillColor="#0B756F" android:pathData="M39,77 C45,73 51,73 56,77 C61,81 67,81 73,77 L73,81 C67,85 60,85 55,81 C50,77 45,77 39,81 Z" />
-    <path android:fillColor="#F47A00" android:pathData="M45,79a2,2 0,1 0,-4 0a2,2 0,1 0,4 0 M71,79a2,2 0,1 0,-4 0a2,2 0,1 0,4 0" />
+        android:fillColor="#00000000"
+        android:strokeColor="#0B756F"
+        android:strokeWidth="4.5"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"
+        android:pathData="M42,62 C42,56 46.5,53 51.5,55 C57,57 60,63 64,57 C68,51 62,47 57.5,43 C53,39 53,35 57,31" />
+    <path android:fillColor="#F47A00" android:pathData="M45,62a3,3 0,1 0,-6 0a3,3 0,1 0,6 0 M67,57a3,3 0,1 0,-6 0a3,3 0,1 0,6 0" />
+    <path
+        android:fillColor="#F47A00"
+        android:strokeColor="#FFF4DF"
+        android:strokeWidth="2"
+        android:pathData="M62,32a5,5 0,1 0,-10 0a5,5 0,1 0,10 0" />
 </vector>

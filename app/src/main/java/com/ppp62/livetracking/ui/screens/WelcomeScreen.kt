@@ -38,7 +38,7 @@ fun WelcomeScreen(onRole: (UserRole) -> Unit, onPreferences: () -> Unit = {}) {
         }
         Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(26.dp),verticalArrangement=Arrangement.spacedBy(18.dp)) {
             Row(verticalAlignment=Alignment.CenterVertically) {
-                Image(painterResource(com.ppp62.livetracking.R.drawable.logo_ppp),"PPPVenza logo",modifier=Modifier.size(42.dp)); Spacer(Modifier.width(10.dp))
+                Image(painterResource(com.ppp62.livetracking.R.drawable.logo_ppp),"PPPVenza map pin logo",modifier=Modifier.size(42.dp)); Spacer(Modifier.width(10.dp))
                 Text("PPPVenza",style=MaterialTheme.typography.titleLarge,modifier=Modifier.weight(1f))
                 IconButton(onClick=onPreferences){Icon(Icons.Default.Tune,"Preferences")}
             }
