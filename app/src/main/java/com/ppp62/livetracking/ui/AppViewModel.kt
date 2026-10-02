@@ -68,7 +68,7 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    fun submit(checkpoint: CheckpointEntity, temperature: Double?, weight: Double?, condition: FishCondition, notes: String, photoUri: String?, latitude: Double?, longitude: Double?, onDone: () -> Unit, phase: TransportPhase? = null) = viewModelScope.launch {
+    fun submit(checkpoint: CheckpointEntity, temperature: Double?, totalFish: Int?, ph: Double?, dissolvedOxygen: Double?, condition: FishCondition, notes: String, photoUri: String?, latitude: Double?, longitude: Double?, onDone: () -> Unit, phase: TransportPhase? = null) = viewModelScope.launch {
         val app = getApplication<PPP62Application>()
         try {
             val uid = app.backend.ensureSignedIn() ?: app.backendConfig.verifiedUser().takeIf {
@@ -78,12 +78,14 @@ class AppViewModel(application: Application) : AndroidViewModel(application) {
             if (phase != null) require(TransportJourney.endpoint(sessionCheckpoints.value, phase)?.id == checkpoint.id) {
                 "The route changed. Reopen the transport record."
             }
-            require((temperature == null && !checkpoint.requiresTemperature || temperature?.isFinite() == true) && (weight == null && !checkpoint.requiresWeight || weight?.let {it.isFinite() && it>=0} == true)) { "Enter valid measurements" }
+            require((temperature == null && !checkpoint.requiresTemperature || temperature?.let { it.isFinite() && it in -2.0..60.0 } == true) &&
+                (totalFish == null || totalFish >= 0) && (ph == null || ph.isFinite() && ph in 0.0..14.0) &&
+                (dissolvedOxygen == null || dissolvedOxygen.isFinite() && dissolvedOxygen in 0.0..60.0)) { "Enter valid water conditions" }
             val timing = JourneyStore(app).load(checkpoint.sessionId, uid)
             val recordNotes = if (phase == TransportPhase.END && timing.startedAt > 0) {
                 "Journey time: ${JourneyTiming.format(timing.accumulatedMillis)}\n${notes.trim()}".trim()
             } else notes
-            repository.submitCheckIn(checkpoint, profile.value.name, profile.value.team, temperature, weight, condition, recordNotes, photoUri, latitude, longitude, uid, phase)
+            repository.submitCheckIn(checkpoint, profile.value.name, profile.value.team, temperature, totalFish, ph, dissolvedOxygen, condition, recordNotes, photoUri, latitude, longitude, uid, phase)
             phase?.let { _savedTransportRecords.update { records -> records + TransportJourney.recordId(checkpoint.sessionId, uid, it) } }
             com.ppp62.livetracking.service.SyncWorker.enqueue(app)
             message.value = "${phase?.label ?: "Check-in"} saved · upload queued"

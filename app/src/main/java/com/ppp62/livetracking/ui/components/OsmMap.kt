@@ -7,9 +7,11 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Paint
 import android.graphics.Path
+import android.graphics.Point
 import android.content.Context
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.text.Html
 import android.text.method.LinkMovementMethod
 import android.widget.TextView
@@ -97,9 +99,7 @@ fun OsmMap(
     }
     val participantIcons = remember(participants.map { listOf(it.participantId, it.team, markerTypes[it.participantId].orEmpty()) }, context) {
         participants.associate { person ->
-            val colors = intArrayOf(0xFF197C79.toInt(), 0xFF4267A8.toInt(), 0xFFAF6B35.toInt(), 0xFF72589A.toInt(), 0xFF4D7B4A.toInt(), 0xFFB04F66.toInt())
-            val teamColor = colors[(person.team.hashCode() and Int.MAX_VALUE) % colors.size]
-            person.participantId to participantPin(context, teamColor, ParticipantMarkers.get(markerTypes[person.participantId].orEmpty()).emoji)
+            person.participantId to participantPin(context, teamColor(person.team), ParticipantMarkers.get(markerTypes[person.participantId].orEmpty()).emoji)
         }
     }
     val map = remember(context, viewportKey) {
@@ -241,8 +241,27 @@ fun OsmMap(
     }
     val staleStates = participants.map { freshnessTick - it.recordedAt > 90_000 }
     val participantOverlays = remember(map) { mutableListOf<Overlay>() }
+    val rippleOverlay = remember(map) { WaterRippleOverlay() }
+    val liveRipplePoints = remember(participants, staleStates) {
+        participants.mapIndexedNotNull { index, participant ->
+            if (participant.trackingState == TrackingState.LIVE && !staleStates.getOrElse(index) { true }) {
+                RipplePoint(GeoPoint(participant.latitude, participant.longitude), teamColor(participant.team))
+            } else null
+        }
+    }
+    LaunchedEffect(map, liveRipplePoints) {
+        map.overlays.remove(rippleOverlay)
+        rippleOverlay.points = liveRipplePoints
+        if (liveRipplePoints.isNotEmpty()) map.overlays.add(rippleOverlay)
+        map.invalidate()
+    }
+    LaunchedEffect(map, liveRipplePoints.isNotEmpty()) {
+        if (liveRipplePoints.isNotEmpty()) while (true) { delay(55); map.invalidate() }
+    }
     LaunchedEffect(map, participants, staleStates) {
         map.overlays.removeAll(participantOverlays.toSet())
+        map.overlays.remove(rippleOverlay)
+        rippleOverlay.points = liveRipplePoints
         val markerOverlays = participantOverlays
         markerOverlays.clear()
         participants.forEach { p ->
@@ -260,6 +279,7 @@ fun OsmMap(
                 setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
             })
         }
+        if (liveRipplePoints.isNotEmpty()) map.overlays.add(rippleOverlay)
         map.overlays.addAll(participantOverlays)
         map.invalidate()
     }
@@ -271,7 +291,7 @@ fun OsmMap(
         else { locationMarker.position = myLocation; if (!map.overlays.contains(locationMarker)) map.overlays.add(locationMarker) }
         map.invalidate()
     }
-    val lastCameraRequest = remember(map) { arrayOf<GeoPoint?>(if (savedViewport != null) target else null) }
+    val lastCameraRequest = remember(map) { arrayOf<GeoPoint?>(null) }
     SideEffect {
         // Each button press is a request, even if its coordinates match the previous fix.
         if (target != null && target !== lastCameraRequest[0]) {
@@ -357,6 +377,34 @@ private fun circlePoints(center: GeoPoint, radiusMeters: Double, segments: Int =
 }
 
 /** White-rimmed numbered pins remain readable over both streets and imagery. */
+private fun teamColor(team: String): Int {
+    val colors = intArrayOf(0xFF197C79.toInt(), 0xFF4267A8.toInt(), 0xFFAF6B35.toInt(), 0xFF72589A.toInt(), 0xFF4D7B4A.toInt(), 0xFFB04F66.toInt())
+    return colors[(team.hashCode() and Int.MAX_VALUE) % colors.size]
+}
+
+private data class RipplePoint(val position: GeoPoint, val color: Int)
+
+/** Animated water rings sit beneath fresh participants that are actively sharing. */
+private class WaterRippleOverlay : Overlay() {
+    var points: List<RipplePoint> = emptyList()
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply { style = Paint.Style.STROKE; strokeWidth = 1.7f }
+
+    override fun draw(canvas: Canvas, mapView: MapView, shadow: Boolean) {
+        if (shadow || points.isEmpty()) return
+        val density = mapView.resources.displayMetrics.density
+        val phase = (SystemClock.uptimeMillis() % 1600L) / 1600f
+        points.forEach { ripple ->
+            val center = mapView.projection.toPixels(ripple.position, null as Point?)
+            repeat(2) { ring ->
+                val progress = (phase + ring * .5f) % 1f
+                paint.color = ripple.color
+                paint.alpha = ((1f - progress) * 112).toInt()
+                canvas.drawCircle(center.x.toFloat(), center.y.toFloat(), (7f + progress * 19f) * density, paint)
+            }
+        }
+    }
+}
+
 private fun mapPin(context: Context, color: Int, label: String): BitmapDrawable {
     val density = context.resources.displayMetrics.density
     val bitmap = Bitmap.createBitmap((40 * density).toInt(), (48 * density).toInt(), Bitmap.Config.ARGB_8888)
@@ -384,20 +432,32 @@ private fun mapPin(context: Context, color: Int, label: String): BitmapDrawable 
 /** Emoji vehicle/animal pins use a stable team color, so teams stay distinct at a glance. */
 private fun participantPin(context: Context, color: Int, emoji: String): BitmapDrawable {
     val density = context.resources.displayMetrics.density
-    val bitmap = Bitmap.createBitmap((48 * density).toInt(), (56 * density).toInt(), Bitmap.Config.ARGB_8888)
+    val bitmap = Bitmap.createBitmap((52 * density).toInt(), (68 * density).toInt(), Bitmap.Config.ARGB_8888)
     val canvas = Canvas(bitmap).apply { scale(density, density) }
     val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+    val pin = Path().apply {
+        moveTo(26f, 64f)
+        cubicTo(21f, 56f, 6f, 39f, 6f, 25f)
+        cubicTo(6f, 13f, 15f, 4f, 26f, 4f)
+        cubicTo(37f, 4f, 46f, 13f, 46f, 25f)
+        cubicTo(46f, 39f, 31f, 56f, 26f, 64f)
+        close()
+    }
+    paint.color = AndroidColor.argb(48, 0, 0, 0)
+    canvas.drawOval(13f, 61f, 39f, 66f, paint)
     paint.color = color
-    canvas.drawCircle(24f, 24f, 20f, paint)
+    canvas.drawPath(pin, paint)
     paint.color = AndroidColor.WHITE
     paint.style = Paint.Style.STROKE
-    paint.strokeWidth = 2.5f
-    canvas.drawCircle(24f, 24f, 20f, paint)
+    paint.strokeWidth = 2f
+    canvas.drawPath(pin, paint)
+    paint.style = Paint.Style.FILL
+    canvas.drawCircle(26f, 25f, 15f, paint)
     paint.style = Paint.Style.FILL
     paint.textAlign = Paint.Align.CENTER
-    paint.textSize = 22f
+    paint.textSize = 18f
     paint.typeface = android.graphics.Typeface.DEFAULT
     val font = paint.fontMetrics
-    canvas.drawText(emoji, 24f, 24f - (font.ascent + font.descent) / 2f, paint)
+    canvas.drawText(emoji, 26f, 25f - (font.ascent + font.descent) / 2f, paint)
     return BitmapDrawable(context.resources, bitmap)
 }

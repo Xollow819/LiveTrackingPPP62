@@ -72,8 +72,10 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
                             Text("${item.displayName} · ${item.team}")
                             item.exceptionReason?.let { Text("Flagged: $it",color=MaterialTheme.colorScheme.tertiary) }
                             val details = listOfNotNull(
-                                item.temperatureC?.let { "$it °C" },
-                                item.weightKg?.let { "$it kg" },
+                                item.temperatureC?.let { "Water $it °C" },
+                                item.totalFish?.let { "$it fish" },
+                                item.ph?.let { "pH $it" },
+                                item.dissolvedOxygen?.let { "DO $it mg/L" },
                                 item.condition
                             ).joinToString(" • ")
                             if (details.isNotBlank()) Text(details)
@@ -90,7 +92,7 @@ fun SubmissionsScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Uni
             val cp = checkpoints.firstOrNull { it.id == item.checkpointId }?.name ?: item.checkpointId
             GlassCard(Modifier.fillMaxWidth().padding(12.dp, 6.dp), shape = RoundedCornerShape(20.dp), colors = CardDefaults.elevatedCardColors(containerColor = MaterialTheme.colorScheme.surface)) { Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) { Text(TransportJourney.phase(item.id, item.sessionId, item.userId)?.let { "${it.label} · $cp" } ?: cp, fontWeight = FontWeight.Bold); AssistChip(onClick = {}, label = { Text(item.syncState.name) }, leadingIcon = { Icon(if (item.syncState == SyncState.FLAGGED) Icons.Default.Warning else Icons.Default.CloudUpload, null) }) }
-                Text("${item.studentName} • ${item.team}"); Text("${item.temperatureC ?: "—"} °C • ${item.weightKg ?: "—"} kg • ${item.condition.name}")
+                Text("${item.studentName} • ${item.team}"); Text(listOfNotNull(item.temperatureC?.let { "Water $it °C" },item.totalFish?.let { "$it fish" },item.ph?.let { "pH $it" },item.dissolvedOxygen?.let { "DO $it mg/L" },item.condition.name).joinToString(" • "))
                 item.distanceMeters?.let { Text("Distance ${it.toInt()} m") }; item.exceptionReason?.let { Text(it, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium) }
                 item.photoUri?.let { EvidenceThumbnail(it) }
                 if (item.notes.isNotBlank()) Text(item.notes); Text(DateFormat.getDateTimeInstance().format(Date(item.createdAt)), style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)

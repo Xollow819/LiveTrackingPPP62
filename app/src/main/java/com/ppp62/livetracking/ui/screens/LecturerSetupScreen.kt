@@ -339,8 +339,8 @@ private fun MapStep(
             lat = geo.latitude, lng = geo.longitude,
             order = drafts.size + 1,
             onDismiss = { pendingPin = null },
-            onSave = { name, radius, instructions, photo, temperature, weight ->
-                drafts.add(DraftCheckpoint(name, geo.latitude, geo.longitude, radius, instructions, photo, temperature, weight))
+            onSave = { name, radius, instructions, photo, temperature ->
+                drafts.add(DraftCheckpoint(name, geo.latitude, geo.longitude, radius, instructions, photo, temperature, false))
                 pendingPin = null
             }
         )
@@ -348,11 +348,11 @@ private fun MapStep(
 }
 
 @Composable
-private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Unit, onSave: (String, Double, String, Boolean, Boolean, Boolean) -> Unit) {
+private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Unit, onSave: (String, Double, String, Boolean, Boolean) -> Unit) {
     var name by remember { mutableStateOf("") }
     var radius by remember { mutableStateOf("75") }
     var instructions by remember { mutableStateOf("") }
-    var photo by remember {mutableStateOf(true)}; var temperature by remember {mutableStateOf(true)}; var weight by remember {mutableStateOf(true)}
+    var photo by remember {mutableStateOf(true)}; var temperature by remember {mutableStateOf(true)}
     var attempted by remember { mutableStateOf(false) }
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -365,7 +365,6 @@ private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Uni
                 OutlinedTextField(instructions, { instructions = it }, label = { Text("Instructions for students") }, minLines = 2)
                 Row(verticalAlignment=Alignment.CenterVertically){Checkbox(photo,{photo=it});Text("Require photo")}
                 Row(verticalAlignment=Alignment.CenterVertically){Checkbox(temperature,{temperature=it});Text("Require temperature")}
-                Row(verticalAlignment=Alignment.CenterVertically){Checkbox(weight,{weight=it});Text("Require weight")}
                 if (attempted) Text("Name the checkpoint and use a radius of 20–500 m.", color = MaterialTheme.colorScheme.error, style = MaterialTheme.typography.labelMedium)
             }
         },
@@ -373,7 +372,7 @@ private fun PinDialog(lat: Double, lng: Double, order: Int, onDismiss: () -> Uni
             TextButton(onClick = {
                 attempted = true
                 val r = radius.toDoubleOrNull()
-                if (name.isNotBlank() && r != null && r in 20.0..500.0) onSave(name.trim(), r, instructions.trim(), photo, temperature, weight)
+                if (name.isNotBlank() && r != null && r in 20.0..500.0) onSave(name.trim(), r, instructions.trim(), photo, temperature)
             }) { Text("Pin checkpoint") }
         },
         dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } }

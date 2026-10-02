@@ -18,8 +18,10 @@ await db.exec(await readFile(new URL('../schema.sql',import.meta.url),'utf8'));
 // Reapplying the versioned migration must also succeed.
 await db.exec(await readFile(new URL('../migrations/20261002_secure_sessions.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../migrations/20261002_team_live_tracking.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../migrations/20261002_transport_water_quality.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../migrations/20261002_secure_sessions.sql',import.meta.url),'utf8'));
 await db.exec(await readFile(new URL('../migrations/20261002_team_live_tracking.sql',import.meta.url),'utf8'));
+await db.exec(await readFile(new URL('../migrations/20261002_transport_water_quality.sql',import.meta.url),'utf8'));
 await db.exec(`grant usage on schema public,auth,storage to authenticated;
 grant select,insert,update,delete on all tables in schema public,storage to authenticated;`);
 const owner='00000000-0000-0000-0000-000000000001';
@@ -70,11 +72,13 @@ assert.equal((await db.query('select lat from live_positions')).rows[0].lat,-6.2
 const recordId='00000000-0000-0000-0000-000000000004';
 const path=`${session.id}/${student}/${recordId}.jpg`;
 await db.query('insert into storage.objects(bucket_id,name) values($1,$2)',['evidence',path]);
-const record={id:recordId,session_id:session.id,user_id:student,checkpoint_id:checkpoint.id,display_name:'Ayu',team:'Team A',photo_path:path,temperature_c:25,weight_kg:4,condition:'GOOD',lat:0,lng:0};
+const record={id:recordId,session_id:session.id,user_id:student,checkpoint_id:checkpoint.id,display_name:'Ayu',team:'Team A',photo_path:path,temperature_c:25,total_fish:42,ph:7.4,dissolved_oxygen:6.3,condition:'GOOD',lat:0,lng:0};
 await db.query('select submit_field_evidence($1)',[JSON.stringify(record)]);
 await db.query('select submit_field_evidence($1)',[JSON.stringify(record)]);
 assert.equal((await db.query('select count(*)::int n from submissions')).rows[0].n,1);
 assert.equal((await db.query('select exception_reason from submissions')).rows[0].exception_reason,'Outside checkpoint radius');
+assert.deepEqual((await db.query('select total_fish,ph,dissolved_oxygen from submissions')).rows[0],{total_fish:42,ph:7.4,dissolved_oxygen:6.3});
+await denied('select submit_field_evidence($1)',[JSON.stringify({...record,id:'00000000-0000-0000-0000-000000000006',ph:15})]);
 await login(outsider,true);
 assert.equal((await db.query('select * from submissions')).rows.length,0);
 assert.equal((await db.query('select * from live_positions')).rows.length,0);
@@ -91,4 +95,4 @@ await denied('select * from join_field_session($1,$2,$3)',['ABC234','Ayu','Team 
 await denied('select submit_field_evidence($1)',[JSON.stringify({...record,id:'00000000-0000-0000-0000-000000000005'})]);
 await db.query('select submit_field_evidence($1)',[JSON.stringify(record)]);
 await db.close();
-console.log('PASS: atomic sessions, owner authorization, team-wide active-session location visibility, marker validation, scoped evidence, monotonic events, idempotent retries, closed sessions and repeatable migrations');
+console.log('PASS: atomic sessions, owner authorization, team-wide location visibility, marker validation, validated water-quality submissions, scoped evidence, idempotent retries, closed sessions and repeatable migrations');

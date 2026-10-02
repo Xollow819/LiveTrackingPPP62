@@ -60,6 +60,9 @@ data class SubmissionRow(
     val lng: Double? = null,
     @SerialName("temperature_c") val temperatureC: Double? = null,
     @SerialName("weight_kg") val weightKg: Double? = null,
+    @SerialName("total_fish") val totalFish: Int? = null,
+    @SerialName("ph") val ph: Double? = null,
+    @SerialName("dissolved_oxygen") val dissolvedOxygen: Double? = null,
     val condition: String? = null,
     @SerialName("created_at") val createdAt: String? = null
 )
@@ -77,6 +80,6 @@ data class CheckpointRow(
     val instructions: String = "",
     @SerialName("requires_photo") val requiresPhoto: Boolean = true,
     @SerialName("requires_temperature") val requiresTemperature: Boolean = true,
-    @SerialName("requires_weight") val requiresWeight: Boolean = true,
+    @SerialName("requires_weight") val requiresWeight: Boolean = false,
     @SerialName("created_at") val createdAt: String? = null
 )

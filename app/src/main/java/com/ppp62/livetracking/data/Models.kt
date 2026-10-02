@@ -54,7 +54,10 @@ data class CheckInEntity(
     val syncState: SyncState,
     val exceptionReason: String? = null,
     val userId: String = "",
-    val uploadError: String? = null
+    val uploadError: String? = null,
+    val totalFish: Int? = null,
+    val ph: Double? = null,
+    val dissolvedOxygen: Double? = null
 )
 
 @Entity(tableName = "locations", primaryKeys = ["sessionId", "participantId"])

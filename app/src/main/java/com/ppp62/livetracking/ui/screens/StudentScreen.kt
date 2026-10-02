@@ -6,8 +6,7 @@ import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -55,6 +54,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
     var code by rememberSaveable { mutableStateOf("") }; var name by rememberSaveable { mutableStateOf("") }; var team by rememberSaveable { mutableStateOf("") }
     var error by remember { mutableStateOf<String?>(null) }; var joining by remember { mutableStateOf(false) }
     var tab by rememberSaveable { mutableIntStateOf(0) }
+    var markerPickerOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(cps) { vm.setSessionCheckpoints(cps) }
     LaunchedEffect(session?.id, role) {
         if (session != null && role == "student") { val identity = bvm.savedIdentity(); vm.joinField(identity.first, identity.second) }
@@ -120,11 +120,12 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
             StudentRouteMap(cps, mapParticipants, markerTypes, "student-${session!!.id}", tab == 0, navigationHeight + 4.dp)
             when (tab) {
                 0 -> GlassCard(Modifier.align(Alignment.BottomCenter).fillMaxWidth()
-                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = navigationHeight + 56.dp), translucent = true) {
-                    Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    .padding(start = 16.dp, end = 16.dp, top = 16.dp, bottom = navigationHeight + 56.dp),
+                    shape = RoundedCornerShape(32.dp), translucent = true) {
+                    Column(Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(if (sharing) Icons.Default.GpsFixed else Icons.Default.GpsOff, null, tint = MaterialTheme.colorScheme.primary)
-                            Spacer(Modifier.width(12.dp))
+                            Icon(if (sharing) Icons.Default.GpsFixed else Icons.Default.GpsOff, null, Modifier.size(20.dp), tint = MaterialTheme.colorScheme.primary)
+                            Spacer(Modifier.width(9.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(when {
                                     hasEnd -> "Transport completed"
@@ -133,33 +134,19 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                                     sharing -> "Sharing location"
                                     !session!!.isActive -> "Session completed"
                                     else -> "Ready when you are"
-                                }, style = MaterialTheme.typography.titleMedium)
+                                }, style = MaterialTheme.typography.titleSmall)
                                 LocationFreshness(own)
                             }
-                            Text(if (bvm.connectionState.value == ConnectionState.CONNECTED) "Connected" else "Reconnecting", style = MaterialTheme.typography.labelSmall)
+                            Text(if (bvm.connectionState.value == ConnectionState.CONNECTED) "Online" else "Reconnecting", style = MaterialTheme.typography.labelSmall)
                         }
-                        JourneyTimer(timing, store.bootCount())
-                        Text("${mapParticipants.count { it.participantId != userId && it.trackingState == TrackingState.LIVE && System.currentTimeMillis() - it.recordedAt < 90_000 }} other students visible", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Text("Your map marker", style = MaterialTheme.typography.labelMedium)
-                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                            ParticipantMarkers.options.forEach { option ->
-                                FilterChip(selected = markerType == option.id, onClick = {
-                                    markerType = option.id
-                                    val currentSession = session
-                                    val currentUser = userId
-                                    if (currentSession != null && currentUser != null) {
-                                        markerPrefs.edit().putString(ParticipantMarkers.preferenceKey(currentSession.id, currentUser), option.id).apply()
-                                        if (serviceMatches) context.startService(Intent(context, LocationTrackingService::class.java)
-                                            .setAction(LocationTrackingService.ACTION_SET_MARKER)
-                                            .putExtra(LocationTrackingService.EXTRA_SESSION, currentSession.id)
-                                            .putExtra(LocationTrackingService.EXTRA_USER, currentUser)
-                                            .putExtra(LocationTrackingService.EXTRA_NAME, profile.name)
-                                            .putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
-                                            .putExtra(LocationTrackingService.EXTRA_MARKER_TYPE, option.id))
-                                    }
-                                }, label = { Text("${option.emoji} ${option.label}", maxLines = 1) })
+                        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween, modifier = Modifier.fillMaxWidth()) {
+                            JourneyTimer(timing, store.bootCount(), compact = true)
+                            TextButton(onClick = { markerPickerOpen = true }, contentPadding = PaddingValues(horizontal = 8.dp, vertical = 2.dp)) {
+                                val selectedMarker = ParticipantMarkers.get(markerType)
+                                Text("${selectedMarker.emoji} Marker", style = MaterialTheme.typography.labelMedium)
                             }
                         }
+                        Text("${mapParticipants.count { it.participantId != userId && it.trackingState == TrackingState.LIVE && System.currentTimeMillis() - it.recordedAt < 90_000 }} teammates nearby", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         when {
                             hasEnd -> Text("Starting and ending conditions recorded.", style = MaterialTheme.typography.bodySmall)
                             timing.finishedAt > 0 && hasStart -> Button(onClick = ::finish, enabled = cps.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Record ending conditions") }
@@ -203,7 +190,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(TransportJourney.phase(record.id, record.sessionId, record.userId)?.label
                                     ?: cps.firstOrNull { it.id == record.checkpointId }?.name ?: "Checkpoint", style = MaterialTheme.typography.titleMedium)
-                                Text("${record.temperatureC ?: "—"} °C · ${record.weightKg ?: "—"} kg · ${record.condition.name.lowercase()}")
+                                Text(listOfNotNull(record.temperatureC?.let { "Water $it °C" },record.totalFish?.let { "$it fish" },record.ph?.let { "pH $it" },record.dissolvedOxygen?.let { "DO $it mg/L" },record.condition.name.lowercase()).joinToString(" · "))
                                 Text(if (record.syncState == SyncState.SYNCED) "Uploaded" else if (record.syncState == SyncState.FAILED) "Upload needs attention" else "Upload queued", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                                 record.uploadError?.let { Text(it, color = MaterialTheme.colorScheme.error) }
                                 record.exceptionReason?.let { Text("Flagged: $it", color = MaterialTheme.colorScheme.tertiary) }
@@ -213,7 +200,7 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                         items(remoteRecords.filter { remote -> records.none { it.id == remote.id } }, key = { it.id.orEmpty() }) { record -> GlassCard(Modifier.fillMaxWidth()) {
                             Column(Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                                 Text(TransportJourney.phase(record.id, record.sessionId, record.userId)?.label ?: record.checkpointName, style = MaterialTheme.typography.titleMedium)
-                                Text("${record.temperatureC ?: "—"} °C · ${record.weightKg ?: "—"} kg · ${record.condition.orEmpty().lowercase()}")
+                                Text(listOfNotNull(record.temperatureC?.let { "Water $it °C" },record.totalFish?.let { "$it fish" },record.ph?.let { "pH $it" },record.dissolvedOxygen?.let { "DO $it mg/L" },record.condition?.lowercase()).joinToString(" · "))
                                 Text("Uploaded", color = MaterialTheme.colorScheme.primary, style = MaterialTheme.typography.labelMedium)
                                 record.exceptionReason?.let { Text("Flagged: $it", color = MaterialTheme.colorScheme.tertiary) }
                             }
@@ -235,13 +222,43 @@ fun StudentScreen(vm: AppViewModel, bvm: BackendViewModel, onBack: () -> Unit, o
                 listOf(Icons.Default.Map, Icons.Default.Route, Icons.Default.ReceiptLong),
                 modifier = Modifier.align(Alignment.BottomCenter).onSizeChanged { navigationHeight = with(density) { it.height.toDp() } }
             ) { tab = it }
+            if (markerPickerOpen) ModalBottomSheet(onDismissRequest = { markerPickerOpen = false }) {
+                Column(Modifier.fillMaxWidth().padding(start = 20.dp, end = 20.dp, bottom = 28.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Choose your map marker", style = MaterialTheme.typography.titleLarge)
+                    Text("Your team will see this icon on the live map.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    ParticipantMarkers.options.forEach { option ->
+                        ListItem(
+                            headlineContent = { Text(option.label) },
+                            leadingContent = { Text(option.emoji, style = MaterialTheme.typography.headlineSmall) },
+                            trailingContent = { if (markerType == option.id) Icon(Icons.Default.Check, contentDescription = "Selected") },
+                            modifier = Modifier.fillMaxWidth().clickable {
+                                markerType = option.id
+                                val currentSession = session
+                                val currentUser = userId
+                                if (currentSession != null && currentUser != null) {
+                                    markerPrefs.edit().putString(ParticipantMarkers.preferenceKey(currentSession.id, currentUser), option.id).apply()
+                                    if (serviceMatches) context.startService(Intent(context, LocationTrackingService::class.java)
+                                        .setAction(LocationTrackingService.ACTION_SET_MARKER)
+                                        .putExtra(LocationTrackingService.EXTRA_SESSION, currentSession.id)
+                                        .putExtra(LocationTrackingService.EXTRA_USER, currentUser)
+                                        .putExtra(LocationTrackingService.EXTRA_NAME, profile.name)
+                                        .putExtra(LocationTrackingService.EXTRA_TEAM, profile.team)
+                                        .putExtra(LocationTrackingService.EXTRA_MARKER_TYPE, option.id))
+                                }
+                                markerPickerOpen = false
+                            },
+                            supportingContent = null
+                        )
+                    }
+                }
+            }
         }
     }
 }
 
 /** Only this leaf recomposes each second; map overlays and route requests stay unchanged. */
 @Composable
-private fun JourneyTimer(timing: JourneyTiming, bootCount: Int) {
+private fun JourneyTimer(timing: JourneyTiming, bootCount: Int, compact: Boolean = false) {
     var elapsed by remember(timing) { mutableLongStateOf(timing.elapsed(System.currentTimeMillis(), android.os.SystemClock.elapsedRealtime(), bootCount)) }
     LaunchedEffect(timing) {
         while (timing.running) {
@@ -249,9 +266,9 @@ private fun JourneyTimer(timing: JourneyTiming, bootCount: Int) {
             delay(1000)
         }
     }
-    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-        Text("Journey time", style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(JourneyTiming.format(elapsed), style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
+    Row(Modifier.then(if (compact) Modifier else Modifier.fillMaxWidth()), horizontalArrangement = if (compact) Arrangement.spacedBy(6.dp) else Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+        Text(if (compact) "Time" else "Journey time", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Text(JourneyTiming.format(elapsed), style = if (compact) MaterialTheme.typography.titleMedium else MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold)
     }
 }
 

@@ -31,7 +31,7 @@ class PPP62Application : Application(), Configuration.Provider {
             tileFileSystemCacheTrimBytes = 192L * 1024 * 1024
         }
         database = Room.databaseBuilder(this, AppDatabase::class.java, "ppp62.db")
-            .addMigrations(com.ppp62.livetracking.data.DatabaseMigrations.FROM_1_TO_2, com.ppp62.livetracking.data.DatabaseMigrations.FROM_2_TO_3)
+            .addMigrations(com.ppp62.livetracking.data.DatabaseMigrations.FROM_1_TO_2, com.ppp62.livetracking.data.DatabaseMigrations.FROM_2_TO_3, com.ppp62.livetracking.data.DatabaseMigrations.FROM_3_TO_4)
             .build()
         repository = PPPRepository(database.dao())
         backendConfig = BackendConfig(this)

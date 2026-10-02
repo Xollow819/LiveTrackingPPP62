@@ -53,7 +53,7 @@ class SyncWorker(context: Context, params: WorkerParameters) : CoroutineWorker(c
                     checkpointId = record.checkpointId, checkpointName = cp.name,
                     exceptionReason = record.exceptionReason, note = record.notes, photoPath = path,
                     lat = record.latitude, lng = record.longitude, temperatureC = record.temperatureC,
-                    weightKg = record.weightKg, condition = record.condition.name,
+                    weightKg = record.weightKg, totalFish = record.totalFish, ph = record.ph, dissolvedOxygen = record.dissolvedOxygen, condition = record.condition.name,
                     createdAt = java.time.Instant.ofEpochMilli(record.createdAt).toString()
                 ))
                 app.database.dao().setCheckInSyncState(record.id, SyncState.SYNCED)

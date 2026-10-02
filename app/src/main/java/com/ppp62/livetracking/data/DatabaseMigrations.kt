@@ -22,4 +22,11 @@ object DatabaseMigrations {
             db.execSQL("ALTER TABLE position_outbox ADD COLUMN markerType TEXT NOT NULL DEFAULT 'motorcycle'")
         }
     }
+    val FROM_3_TO_4 = object : Migration(3, 4) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE check_ins ADD COLUMN totalFish INTEGER")
+            db.execSQL("ALTER TABLE check_ins ADD COLUMN ph REAL")
+            db.execSQL("ALTER TABLE check_ins ADD COLUMN dissolvedOxygen REAL")
+        }
+    }
 }

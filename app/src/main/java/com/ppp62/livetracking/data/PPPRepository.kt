@@ -18,7 +18,9 @@ class PPPRepository(private val dao: PPPDao) {
         studentName: String,
         team: String,
         temperatureC: Double?,
-        weightKg: Double?,
+        totalFish: Int?,
+        ph: Double?,
+        dissolvedOxygen: Double?,
         condition: FishCondition,
         notes: String,
         photoUri: String?,
@@ -40,10 +42,11 @@ class PPPRepository(private val dao: PPPDao) {
         dao.insertCheckIn(
             CheckInEntity(
                 id = id, checkpointId = checkpoint.id, sessionId = checkpoint.sessionId,
-                studentName = studentName.trim(), team = team.trim(), temperatureC = temperatureC, weightKg = weightKg,
+                studentName = studentName.trim(), team = team.trim(), temperatureC = temperatureC, weightKg = null,
                 condition = condition, notes = phase?.let { TransportJourney.notes(it, notes) } ?: notes.trim(), photoUri = photoUri, latitude = latitude, longitude = longitude,
                 distanceMeters = distance, createdAt = System.currentTimeMillis(),
-                syncState = SyncState.PENDING, exceptionReason = exception, userId = userId
+                syncState = SyncState.PENDING, exceptionReason = exception, userId = userId,
+                totalFish = totalFish, ph = ph, dissolvedOxygen = dissolvedOxygen
             )
         )
     }

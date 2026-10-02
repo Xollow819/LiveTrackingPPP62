@@ -41,7 +41,8 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit, ph
     val checkpoint = vm.sessionCheckpoints.value.firstOrNull { it.id == checkpointId }
         ?: checkpoints.firstOrNull { it.id == checkpointId }
     val context = LocalContext.current
-    var temperature by rememberSaveable { mutableStateOf("") }; var weight by rememberSaveable { mutableStateOf("") }
+    var temperature by rememberSaveable { mutableStateOf("") }
+    var totalFish by rememberSaveable { mutableStateOf("") }; var ph by rememberSaveable { mutableStateOf("") }; var dissolvedOxygen by rememberSaveable { mutableStateOf("") }
     var notes by rememberSaveable { mutableStateOf("") }; var condition by rememberSaveable { mutableStateOf(FishCondition.GOOD) }
     var photoUri by rememberSaveable { mutableStateOf<String?>(null) }; var pendingUri by rememberSaveable { mutableStateOf<String?>(null) }; var attempted by remember { mutableStateOf(false) }
     val camera = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok -> if (ok) photoUri = pendingUri }
@@ -89,8 +90,10 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit, ph
             TextButton(onClick={if(DeviceLocation.hasPermission(context)) scope.launch{locate()} else locationPermission.launch(arrayOf(Manifest.permission.ACCESS_FINE_LOCATION,Manifest.permission.ACCESS_COARSE_LOCATION))},enabled=!locating){Text(if(locating) "Finding location…" else "Refresh GPS")}
             if(checkpoint.instructions.isNotBlank()) Text(checkpoint.instructions)
             Text("Transport conditions", style = MaterialTheme.typography.titleLarge)
-            OutlinedTextField(temperature, { temperature = it }, label = { Text("Water temperature (°C)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && !RecordValidation.number(temperature,checkpoint.requiresTemperature), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(weight, { weight = it }, label = { Text("Consignment weight (kg)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && !RecordValidation.number(weight,checkpoint.requiresWeight,true), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(temperature, { temperature = it }, label = { Text("Water temperature (°C)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && !RecordValidation.range(temperature, -2.0..60.0, checkpoint.requiresTemperature), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(totalFish, { totalFish = it }, label = { Text("Total fish") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number), isError = attempted && !RecordValidation.wholeNumber(totalFish), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(ph, { ph = it }, label = { Text("Water pH") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && !RecordValidation.range(ph, 0.0..14.0), modifier = Modifier.fillMaxWidth())
+            OutlinedTextField(dissolvedOxygen, { dissolvedOxygen = it }, label = { Text("Dissolved oxygen (mg/L)") }, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), isError = attempted && !RecordValidation.range(dissolvedOxygen, 0.0..60.0), modifier = Modifier.fillMaxWidth())
             Text("Fish condition", style = MaterialTheme.typography.titleMedium)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) { FishCondition.entries.forEach { value -> FilterChip(selected = condition == value, onClick = { condition = value }, label = { Text(value.name.lowercase().replaceFirstChar { it.uppercase() }) }) } }
             Text("Supporting evidence", style = MaterialTheme.typography.titleLarge)
@@ -116,14 +119,17 @@ fun CheckInScreen(vm: AppViewModel, checkpointId: String, onDone: () -> Unit, ph
             Button(onClick = {
                 attempted=true
                 val temp=temperature.toDoubleOrNull()
-                val kg=weight.toDoubleOrNull()
-                if(RecordValidation.number(temperature,checkpoint.requiresTemperature) && RecordValidation.number(weight,checkpoint.requiresWeight,true) && (!checkpoint.requiresPhoto||photoUri!=null)) {
+                val count=totalFish.toIntOrNull()
+                val phValue=ph.toDoubleOrNull()
+                val oxygen=dissolvedOxygen.toDoubleOrNull()
+                if(RecordValidation.range(temperature,-2.0..60.0,checkpoint.requiresTemperature) && RecordValidation.wholeNumber(totalFish) &&
+                    RecordValidation.range(ph,0.0..14.0) && RecordValidation.range(dissolvedOxygen,0.0..60.0) && (!checkpoint.requiresPhoto||photoUri!=null)) {
                     saving=true
                     scope.launch {
                         try {
                             if (fix == null || System.currentTimeMillis() - fix!!.time !in 0..30_000 || fix!!.accuracy > 100) locate()
                             val fresh=fix?.takeIf{System.currentTimeMillis()-it.time in 0..120_000}
-                            vm.submit(checkpoint,temp,kg,condition,notes,photoUri,fresh?.takeIf{it.accuracy<=100}?.latitude,fresh?.takeIf{it.accuracy<=100}?.longitude,onSaved,phase).join()
+                            vm.submit(checkpoint,temp,count,phValue,oxygen,condition,notes,photoUri,fresh?.takeIf{it.accuracy<=100}?.latitude,fresh?.takeIf{it.accuracy<=100}?.longitude,onSaved,phase).join()
                         } finally {saving=false}
                     }
                 }

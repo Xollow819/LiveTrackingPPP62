@@ -21,7 +21,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 @kotlinx.serialization.Serializable
-data class DraftCheckpoint(val name: String, val lat: Double, val lng: Double, val radius: Double, val instructions: String, val requiresPhoto:Boolean=true, val requiresTemperature:Boolean=true, val requiresWeight:Boolean=true)
+data class DraftCheckpoint(val name: String, val lat: Double, val lng: Double, val radius: Double, val instructions: String, val requiresPhoto:Boolean=true, val requiresTemperature:Boolean=true, val requiresWeight:Boolean=false)
 data class FieldAlert(val id: Long, val text: String, val at: Long)
 enum class ConnectionState { UNCONFIGURED, CONNECTING, CONNECTED, RECONNECTING }
 

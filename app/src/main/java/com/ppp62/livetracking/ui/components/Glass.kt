@@ -31,8 +31,8 @@ fun GlassCard(modifier: Modifier = Modifier, shape: RoundedCornerShape = Rounded
     val surface=colors?.containerColor ?: MaterialTheme.colorScheme.surface
     val style=remember(surface,shape,translucent) { GlassStyle.regular.then {
         backgroundColor(if (translucent) androidx.compose.ui.graphics.Color.Transparent else surface.copy(alpha = .78f));shape(shape)
-        tint(surface.copy(alpha=if (translucent) .12f else .06f));shape(shape)
-        specularIntensity(if (translucent) .30f else .20f);ambientResponse(if (translucent) .10f else .06f)
+        tint(surface.copy(alpha=if (translucent) .055f else .06f));shape(shape)
+        specularIntensity(if (translucent) .42f else .20f);ambientResponse(if (translucent) .14f else .06f)
     } }
     val glass=if(reduced) Modifier.background(surface,shape)
         else Modifier.hazeGlass(HazeInput.Sources(state,retention=HazeSourceRetention.ClearWhenUnavailable),style)
