@@ -10,6 +10,10 @@ val supabaseLocalProps = Properties().apply {
     if (f.exists()) f.inputStream().use(::load)
 }
 fun bundledSupabase(key: String): String = supabaseLocalProps.getProperty(key, "").trim()
+fun releaseSigning(key: String): String =
+    providers.environmentVariable(key).orNull ?: supabaseLocalProps.getProperty(key, "")
+val releaseSigningKeys = listOf("PPP62_RELEASE_STORE_FILE", "PPP62_RELEASE_STORE_PASSWORD", "PPP62_RELEASE_KEY_ALIAS", "PPP62_RELEASE_KEY_PASSWORD")
+val hasReleaseSigning = releaseSigningKeys.all { releaseSigning(it).isNotBlank() }
 
 plugins {
     id("com.android.application")
@@ -26,18 +30,40 @@ android {
         applicationId = "com.ppp62.livetracking"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "1.2.2"
+        versionCode = 7
+        versionName = "1.2.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "SYNC_ENDPOINT", "\"${providers.gradleProperty("PPP62_SYNC_ENDPOINT").orElse("").get()}\"")
         buildConfigField("String", "SUPABASE_URL", "\"${bundledSupabase("SUPABASE_URL")}\"")
         buildConfigField("String", "SUPABASE_ANON_KEY", "\"${bundledSupabase("SUPABASE_ANON_KEY")}\"")
     }
     buildFeatures { compose = true; buildConfig = true }
-    packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
+    packaging {
+        resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // Extract native libraries during installation instead of relying on
+        // OEM installers to map uncompressed libraries directly from the APK.
+        jniLibs.useLegacyPackaging = true
+    }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("distribution") {
+                storeFile = file(releaseSigning("PPP62_RELEASE_STORE_FILE"))
+                storePassword = releaseSigning("PPP62_RELEASE_STORE_PASSWORD")
+                keyAlias = releaseSigning("PPP62_RELEASE_KEY_ALIAS")
+                keyPassword = releaseSigning("PPP62_RELEASE_KEY_PASSWORD")
+                enableV1Signing = true
+                enableV2Signing = true
+                enableV3Signing = true
+            }
+        }
+    }
     buildTypes {
         debug { applicationIdSuffix = ".debug"; versionNameSuffix = "-debug" }
-        release { isMinifyEnabled = false; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") }
+        release {
+            isMinifyEnabled = false
+            if (hasReleaseSigning) signingConfig = signingConfigs.getByName("distribution")
+            proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
+        }
     }
     sourceSets["androidTest"].assets.srcDir("$projectDir/schemas")
     compileOptions { sourceCompatibility = JavaVersion.VERSION_17; targetCompatibility = JavaVersion.VERSION_17 }
@@ -91,6 +117,9 @@ dependencies {
 // Public client credentials are required for a distributable online app.
 tasks.matching { it.name == "preReleaseBuild" }.configureEach {
     doFirst {
+        check(hasReleaseSigning && file(releaseSigning("PPP62_RELEASE_STORE_FILE")).isFile) {
+            "Build a signed APK using python3 scripts/build_distribution.py, or configure all PPP62_RELEASE_* signing settings"
+        }
         check(bundledSupabase("SUPABASE_URL").startsWith("https://") && bundledSupabase("SUPABASE_ANON_KEY").isNotBlank()) {
             "Configure SUPABASE_URL and SUPABASE_ANON_KEY in local.properties before building a release"
         }

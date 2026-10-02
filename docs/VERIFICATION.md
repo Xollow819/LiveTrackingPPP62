@@ -23,6 +23,14 @@ Measured cached re-entry was 203–209 ms (including a deliberate 200 ms test wa
 
 Uncached imagery remains dependent on the provider/network: one satellite run exceeded the test's 30-second tile wait, and a direct uncached EOX request from the host took 13 seconds. The subsequent cached device run passed. No forced cache expiry or bulk/offscreen downloads were added.
 
+## Public APK installation — v1.2.3
+
+The public download now uses a signed, non-debuggable production APK (`com.ppp62.livetracking`, version code 7). Its persistent private signing key is stored outside the repository and reused by `scripts/build_distribution.py`; release builds reject missing signing settings. APK verification checks its signature, package ID, absence of debug/test-only flags, both ARM architectures, and compressed native libraries extracted at installation. Twelve JVM tests and release lint with zero errors passed.
+
+On a clean Android 12/API 31 ARM64 emulator, opening the APK from Files → Download and using the standard Android package installer completed with **App installed**. A subsequent cold launch displayed the configured app's welcome screen successfully. This checks the user-facing installation flow, rather than just an ADB install.
+
+The original v1.2.2 also installed through ADB on this Android 12 emulator. Consequently the reported OPPO CPH2461 rejection is not reproduced, and its underlying installer error remains unconfirmed. The new production APK must still be tried on that physical OPPO; the emulator is not a substitute for ColorOS testing. Older debug builds keep their separate package and local data.
+
 ## Remaining external acceptance
 
 The Supabase URL/public client key are now configured in gitignored local.properties. Read-only live checks confirmed that the project responds and anonymous sign-in/email authentication are enabled. The user applied the upgrade in Supabase SQL Editor. Subsequent read-only API checks confirmed the new ownership, checkpoint requirements, evidence and tracking columns on all four affected tables. Authentication email redirects, realtime subscriptions, authenticated policy behavior and multi-device evidence sync remain **unverified against the existing project**. Follow [backend setup](../backend/supabase/SETUP.md). Release builds reject missing configuration.
